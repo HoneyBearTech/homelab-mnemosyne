@@ -36,7 +36,8 @@ address. The engines publish their ports on the VM's address for the apps; the e
 - **Disk → the other node.** Proxmox replicates the VM's disks every few minutes; HA restarts the VM from the
   latest copy if its node fails.
 - **Engines → backups.** `scripts/backup.sh` dumps every database nightly (nothing stopped);
-  `scripts/scheduled-backup.sh` copies the dumps to the backup server. Proxmox backs up the whole VM weekly.
+  `scripts/scheduled-backup.sh` copies the dumps to the backup server (one archive encrypted with age, when
+  `BACKUP_AGE_RECIPIENT` is set). Proxmox backs up the whole VM weekly.
 - **Registries → Discord.** Diun compares the pinned tags and newer ones with what it saw last time and posts the
   differences.
 

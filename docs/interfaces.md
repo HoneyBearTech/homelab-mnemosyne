@@ -30,7 +30,9 @@ Every setting is required (`compose.yaml` refuses to start without it) and has a
 
 The unattended backup has its own optional settings in `backup.env` (template:
 [`backup.env.example`](../backup.env.example)): `BACKUP_DIR`, `BACKUP_KEEP`, `BACKUP_REMOTE`, `BACKUP_REMOTE_KEEP`,
-`BACKUP_PING_URL`.
+`BACKUP_PING_URL`, and `BACKUP_AGE_RECIPIENT` (an age public key: the copy at `BACKUP_REMOTE` is then only
+`backup.tar.age`, the backup directory as one tar archive encrypted to that key, and its `SHA256SUMS`; needs `age`
+on the host).
 
 ## Ports
 
@@ -82,7 +84,7 @@ Every `secrets/` and `tls/` folder is 0700 and every file in it 0600, owned by `
 | `scripts/backup.sh [DIR]` | Dumps every database and the accounts, without stopping anything |
 | `scripts/restore.sh DIR pg\|mariadb DB [--replace]` | Restores one database from a dump |
 | `scripts/restore.sh DIR pg-roles\|mariadb-users` | Restores the apps' accounts (onto a new server) |
-| `scripts/scheduled-backup.sh` | The nightly run: `backup.sh`, rsync to the backup server, pruning, Uptime Kuma push |
+| `scripts/scheduled-backup.sh` | The nightly run: `backup.sh`, rsync to the backup server (encrypted with age when `BACKUP_AGE_RECIPIENT` is set), pruning, Uptime Kuma push |
 | `scripts/check_compose.py` | The image and hardening policy over `docker compose config --format json` |
 | `scripts/check_watches.py` | Every engine pin is watched by Diun at that tag and ignored by Dependabot |
 | `scripts/smoke-test.sh` | Starts the stack with throwaway settings and proves the above |

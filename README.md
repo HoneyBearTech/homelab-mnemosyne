@@ -16,7 +16,8 @@ and restarts there if its node fails. Version-pinned and kept as code, like the 
   watches their tags and posts to Discord when a new release or a rebuild of the pinned tag appears; the upgrade is
   a pull request made by hand ([docs/upgrading.md](docs/upgrading.md)).
 - **Backups that restore one app.** Nightly dumps of every database, taken without stopping anything and copied off
-  the host; `scripts/restore.sh` brings back one database, or all of them onto a new server.
+  the host (encrypted with age, when `BACKUP_AGE_RECIPIENT` is set); `scripts/restore.sh` brings back one database,
+  or all of them onto a new server.
 - **Metrics for Argus** from postgres_exporter and mysqld_exporter.
 
 > [!WARNING]

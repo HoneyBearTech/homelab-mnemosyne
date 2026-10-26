@@ -15,6 +15,11 @@ All notable changes to homelab-mnemosyne are documented here. The format follows
 - `scripts/backup.sh` and `scripts/restore.sh`: dumps of every database and the accounts without stopping anything;
   restore one database, or the apps' accounts, from them. The nightly run (`scripts/scheduled-backup.sh`, the systemd
   timer) copies the dumps off the host, as on the other stacks.
+- An encrypted copy off the host for the scheduled backup, as on homelab-ares: with `BACKUP_AGE_RECIPIENT` (an age
+  public key) in `backup.env`, only `backup.tar.age` and its `SHA256SUMS` leave the host, and only the private key's
+  holder can read them (`age -d -i <key> backup.tar.age | tar -x`). Needs `age` on the host; optional, and without it
+  the dumps are copied as before. The smoke test now runs the scheduled backup against a stand-in backup server and
+  checks that only the archive leaves, that the key opens it into the whole backup, and that another key doesn't.
 - `scripts/check_watches.py`: CI fails if an engine is pinned but not watched by Diun at that tag, or not ignored by
   Dependabot.
 - Documentation: installing on Proxmox with ZFS replication and HA, moving each of the homelab's apps over,

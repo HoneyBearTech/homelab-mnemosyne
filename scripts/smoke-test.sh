@@ -8,7 +8,10 @@
 #   - creating more databases for an existing login keeps its password, and `db.sh password` replaces it;
 #   - both exporters are logged in to their engine (pg_up 1, mysql_up 1);
 #   - scripts/backup.sh dumps everything without stopping it, and scripts/restore.sh brings one database back
-#     (refusing to overwrite without --replace).
+#     (refusing to overwrite without --replace);
+#   - scripts/scheduled-backup.sh copies a backup whole to a stand-in backup server (a local directory) and, when age
+#     is installed, with BACKUP_AGE_RECIPIENT only an encrypted archive leaves: the recipient's key opens it into the
+#     whole backup, and another key doesn't.
 # CI runs it on every change; `make smoke` runs it locally. It never touches a real installation on the same Docker
 # host: its own Compose project, settings from .env.example with CONFIG_ROOT in a temporary directory, no fixed
 # container names, no published ports, its own network range, and a dummy Discord webhook (Diun posts nothing on its
@@ -157,6 +160,51 @@ fi
 "$root/scripts/restore.sh" "$work/backup" mariadb-users >/dev/null
 compose exec -T postgres-exporter wget -q -O - http://127.0.0.1:9187/metrics | grep -x 'pg_up 1' >/dev/null ||
   fail "restoring the roles changed the exporter's login"
+
+# The files in a directory, in a fixed order, on one line.
+entries() { find "$1" -mindepth 1 -maxdepth 1 -exec basename {} \; | LC_ALL=C sort | tr '\n' ' '; }
+
+echo "== Scheduled backup, copied off the host"
+mkdir -p "$work/remote"
+printf 'BACKUP_DIR=%s\nBACKUP_REMOTE=%s\n' "$work/scheduled" "$work/remote" >"$work/backup.env"
+BACKUP_ENV_FILE=$work/backup.env "$root/scripts/scheduled-backup.sh"
+copied=$(entries "$work/remote" | tr -d ' ')
+[[ $copied =~ ^[0-9]{8}-[0-9]{6}$ ]] || fail "expected one backup at the remote, found: $copied"
+(cd "$work/remote/$copied" && sha256 -c --quiet SHA256SUMS) || fail "the copy off the host doesn't match its SHA256SUMS"
+[ -z "$(find "$work/remote/$copied" -perm -004)" ] || fail "the copy off the host is readable by other users"
+[ "$(compose ps --status running --quiet | wc -l)" -eq "$(compose config --services | wc -l)" ] ||
+  fail "a service stopped during the scheduled backup"
+
+# With BACKUP_AGE_RECIPIENT, only an encrypted archive leaves the host, and the recipient's key opens it into the
+# backup as written here. Needs age (CI installs it); skipped without it.
+if command -v age >/dev/null && command -v age-keygen >/dev/null; then
+  echo "== Scheduled backup, encrypted copy off the host"
+  (umask 077 && age-keygen -o "$work/age.key" 2>/dev/null)
+  recipient=$(age-keygen -y "$work/age.key")
+  mkdir -p "$work/remote-age"
+  sleep 1 # a new backup name (the time, to the second)
+  printf 'BACKUP_DIR=%s\nBACKUP_REMOTE=%s\nBACKUP_AGE_RECIPIENT=%s\n' "$work/scheduled" "$work/remote-age" \
+    "$recipient" >"$work/backup.env"
+  BACKUP_ENV_FILE=$work/backup.env "$root/scripts/scheduled-backup.sh"
+  sealed=$(entries "$work/remote-age" | tr -d ' ')
+  [[ $sealed =~ ^[0-9]{8}-[0-9]{6}$ ]] || fail "expected one backup at the remote, found: $sealed"
+  [ "$(entries "$work/remote-age/$sealed")" = "SHA256SUMS backup.tar.age " ] ||
+    fail "the encrypted copy holds more than the archive and its SHA256SUMS: $(entries "$work/remote-age/$sealed")"
+  (cd "$work/remote-age/$sealed" && sha256 -c --quiet SHA256SUMS) ||
+    fail "the encrypted copy doesn't match its SHA256SUMS"
+  [ -z "$(find "$work/remote-age/$sealed" -perm -004)" ] || fail "the encrypted copy is readable by other users"
+  mkdir "$work/opened"
+  age -d -i "$work/age.key" "$work/remote-age/$sealed/backup.tar.age" | tar -x -C "$work/opened"
+  (cd "$work/opened/$sealed" && sha256 -c --quiet SHA256SUMS) ||
+    fail "the decrypted backup doesn't match its SHA256SUMS"
+  [ -s "$work/opened/$sealed/postgres/smoke_main.dump" ] || fail "the decrypted backup has no smoke_main dump"
+  if age -d -i <(age-keygen 2>/dev/null) "$work/remote-age/$sealed/backup.tar.age" >/dev/null 2>&1; then
+    fail "another key opened the encrypted copy"
+  fi
+  echo "Only an encrypted archive left the host, and the recipient's key opened it into the whole backup"
+else
+  echo "age isn't installed; skipping the encrypted copy"
+fi
 
 echo "== New passwords"
 new=$("$root/scripts/db.sh" password pg smoke)
