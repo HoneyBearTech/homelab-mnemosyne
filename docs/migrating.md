@@ -123,14 +123,21 @@ Already on PostgreSQL 18, in its own container on its host: a dump and a restore
 docker compose exec -T steerhouse-postgres pg_dump -U steerhouse --format=custom steerhouse >steerhouse.dump
 # Copy steerhouse.dump to this server, then here:
 scripts/db.sh create pg steerhouse steerhouse
-docker compose exec -T postgres pg_restore -U postgres -d steerhouse --no-owner --role=steerhouse --exit-on-error \
-  <steerhouse.dump
+docker compose exec -T postgres pg_restore -U postgres -d steerhouse --no-owner --no-privileges --role=steerhouse \
+  --exit-on-error <steerhouse.dump
 ```
+
+`--no-privileges` leaves out the dump's grants: they name roles from the old server, such as Argus' `grafana_ro`,
+which don't exist here yet, and `--exit-on-error` would stop at the first of them. Steerhouse's own command gives
+them back (below).
 
 Then change Steerhouse's `database_url` secret to this server (with `sslmode=require`), start it, and once it's
 settled remove its own database service in its stack's repository. Argus' read-only role, `grafana_ro`, moves with
-it: create it here by hand (`CREATE ROLE grafana_ro LOGIN PASSWORD '…'`, then `GRANT CONNECT` on the database and
-`SELECT` on the tables Argus reads) and point Argus' data source at this server.
+it. Steerhouse never creates roles, and its login here is no superuser, so create the role by hand as in
+Steerhouse's README (`CREATE ROLE grafana_ro LOGIN PASSWORD '…' NOINHERIT CONNECTION LIMIT 10`, its `ALTER ROLE …
+SET`s, and `GRANT CONNECT ON DATABASE steerhouse`; the SQL on stdin, so the password stays out of the process
+list), then let Steerhouse grant it the `analytics` views: `python -m app.cli analytics-grant grafana_ro` in its
+backend, and `analytics-check grafana_ro` to confirm. Point Argus' data source at this server.
 
 ## Spoolman
 
