@@ -112,8 +112,8 @@ connects, with its password protected by SCRAM (PostgreSQL) or the native challe
 ## Scheduled backups
 
 `scripts/scheduled-backup.sh` runs `scripts/backup.sh` (a dump of every database and the accounts, nothing
-stopped), copies it to the backup server with rsync over SSH, keeps the newest few in each place, and tells an
-Uptime Kuma push monitor how it went.
+stopped), copies it to the backup server with rsync over SSH (encrypted with age, when `BACKUP_AGE_RECIPIENT` is
+set), keeps the newest few in each place, and tells an Uptime Kuma push monitor how it went.
 
 1. On the backup server (a NAS, for example): a user used only for this, with SSH enabled for it, a shared folder
    it can write, and rsync available.
@@ -130,10 +130,16 @@ Uptime Kuma push monitor how it went.
 
    `ssh backup-host true` must work without a prompt. A firewall between the servers' VLAN and the backup server's
    must allow the VM to reach it on TCP 22.
-3. `cp backup.env.example backup.env && chmod 600 backup.env`, and set `BACKUP_REMOTE` (such as
-   `backup-host:/volume1/backups/mnemosyne`) and `BACKUP_PING_URL` (an Uptime Kuma push monitor with a 25-hour
-   heartbeat).
-4. Run it once by hand (`scripts/scheduled-backup.sh`), then install the timer:
+3. **The encryption key** (optional, recommended), on another machine you trust (not this VM):
+   `age-keygen -o mnemosyne-backup.key`. It prints the public key (`age1...`). Keep the key file where you keep your
+   other recovery secrets, such as a password manager, and never copy it to the VM: without it no encrypted backup
+   off the host can be read, and with it any of them can. On the VM: `sudo apt install -y age`.
+4. `cp backup.env.example backup.env && chmod 600 backup.env`, and set `BACKUP_REMOTE` (such as
+   `backup-host:/volume1/backups/mnemosyne`), `BACKUP_AGE_RECIPIENT=age1...` (the public key from step 3; leave it
+   empty to copy the dumps as they are) and `BACKUP_PING_URL` (an Uptime Kuma push monitor with a 25-hour
+   heartbeat). With `BACKUP_AGE_RECIPIENT`, the copy off the host is one folder per backup holding only
+   `backup.tar.age` and its `SHA256SUMS`; the backups in `BACKUP_DIR` on the VM stay as they are.
+5. Run it once by hand (`scripts/scheduled-backup.sh`), then install the timer:
 
    ```sh
    mkdir -p ~/.config/systemd/user && cp deploy/systemd/homelab-mnemosyne-backup.* ~/.config/systemd/user/
@@ -142,7 +148,8 @@ Uptime Kuma push monitor how it went.
    ```
 
 The dumps hold every app's data and the accounts' password hashes: the backup directory is 0700, and the copy on
-the backup server should be readable only by that user.
+the backup server should be readable only by that user, or encrypted (step 3) so that the backup server holds
+nothing it can read. An encrypted copy is opened with the private key as [rebuilding.md](rebuilding.md) shows.
 
 ## Whole-VM backups
 
@@ -169,7 +176,8 @@ total gets close. Each connection costs memory, so add RAM before raising it far
 1. **A restore.** Create a test login and database, write a row, run `scripts/backup.sh`, drop the table,
    `scripts/restore.sh <dir> pg <db> --replace`, read the row.
 2. **The nightly run.** `scripts/scheduled-backup.sh`: the copy arrives on the backup server and the push monitor
-   goes up.
+   goes up. With `BACKUP_AGE_RECIPIENT` set, open that copy with the private key on the machine that holds it
+   ([rebuilding.md](rebuilding.md), step 2) and check its `SHA256SUMS`.
 3. **A failover.** With the test database open from another host, shut down the node the VM runs on (or put it in
    maintenance). The VM must start on the other node within a couple of minutes, keep its address, and the client
    reconnect. Bring the node back and let the VM move home.

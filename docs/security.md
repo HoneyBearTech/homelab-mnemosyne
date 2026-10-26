@@ -21,6 +21,7 @@ its boundaries are drawn tighter than a single app's.
 | Passwords | Sniffed on the LAN | SCRAM-SHA-256 (PostgreSQL), which never sends the password; TLS offered by both engines |
 | Passwords | Leaked from the host | Secret files 0600 in 0700 folders, owned by `PUID`; passed to containers as Docker secrets, to the engines on stdin, never as process arguments or in `.env` |
 | The data | Lost: a node, a disk, a bad upgrade, a bad migration | ZFS replication and HA to the second node; nightly dumps copied off the host; weekly whole-VM backups; a backup before every engine upgrade |
+| The data, password hashes | Read on the backup server | The copy off the host encrypted with age to a key that isn't on the VM (`BACKUP_AGE_RECIPIENT`); checked by the smoke test |
 | The data | Corrupted silently | PostgreSQL data checksums; ZFS checksums |
 | The host | An engine upgraded under the apps without warning | Engines pinned by digest, ignored by Dependabot, upgraded by hand after Diun's alert ([upgrading.md](upgrading.md)) |
 | The host | A compromised image | Every image pinned by digest; weekly vulnerability scan; no container has a capability, privilege or the Docker socket |
@@ -86,6 +87,7 @@ carry no `autoheal` label: restarting a database in the middle of its recovery o
 | PostgreSQL's TLS key | `CONFIG_ROOT/postgres/tls/server.key` | PostgreSQL |
 | The Discord webhook | `CONFIG_ROOT/diun/secrets/discord_webhook` | Diun |
 | Each app's password | printed once by `db.sh`; kept only in the app's own settings | the app |
+| The age private key for the backups (`BACKUP_AGE_RECIPIENT`) | off the VM, with the operator's recovery secrets | whoever restores from an encrypted copy |
 
 Changing the superuser's or root's password later is done in the engine (`ALTER ROLE` / `ALTER USER`) and in the
 file together; the files are read at the first start only. Keep a copy of the files in your password manager.
@@ -93,6 +95,10 @@ file together; the files are read at the first start only. Keep a copy of the fi
 ## Backups
 
 The dumps contain every app's data and the accounts' password hashes. `scripts/backup.sh` writes them 0700/0600;
-the copy on the backup server should be readable by the backup user only. `scripts/restore.sh` checks a backup's
-`SHA256SUMS` before it touches anything, refuses to overwrite a database without `--replace`, and never restores the
-stack's own accounts (their passwords are this installation's).
+the copy on the backup server should be readable by the backup user only. With `BACKUP_AGE_RECIPIENT` set, that
+copy is one archive encrypted to an age key whose private half isn't on the VM, so the backup server holds nothing
+it can read; whoever has the private key can read every encrypted copy, and whoever loses it can read none. The
+scheduled backup can still delete or overwrite the copies (it prunes old ones), so snapshots on the backup server,
+out of the VM's reach, are what protect them from a compromised VM. The backups in `BACKUP_DIR` on the VM aren't
+encrypted. `scripts/restore.sh` checks a backup's `SHA256SUMS` before it touches anything, refuses to overwrite a
+database without `--replace`, and never restores the stack's own accounts (their passwords are this installation's).
