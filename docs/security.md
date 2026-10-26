@@ -47,7 +47,7 @@ Out of scope: someone with root on the VM or a Proxmox node (they own the data),
 
 | Connection | Who | Method |
 | --- | --- | --- |
-| The socket inside the container | `docker compose exec` (scripts, health check) | trust: only root or the `docker` group on the VM can get there |
+| The socket inside the container | `docker compose exec` (scripts) | trust: only root or the `docker` group on the VM can get there |
 | Network, as `postgres` | nobody | reject |
 | Network, as `metrics`, to `postgres`, from `STACK_SUBNET` | postgres_exporter | SCRAM |
 | Network, any other role, from `DB_CLIENT_SUBNET` | the apps | SCRAM; reaches only the databases it was granted `CONNECT` on |

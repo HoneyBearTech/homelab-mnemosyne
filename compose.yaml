@@ -57,9 +57,15 @@ services:
       org.honeybeartech.mnemosyne.engine: postgres
     healthcheck:
       <<: *healthcheck
-      # Over TCP, not the socket: the entrypoint's temporary server during initdb listens on the socket only, so
-      # this can't pass before the real server is up. (A pg_hba reject still counts as "accepting connections".)
-      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "postgres"]
+      # Without connecting, so it adds nothing to the log (connections are logged, and a refused one is a FATAL):
+      # postmaster.pid's status line reads "ready" once startup and any crash recovery are done, and the server
+      # listens on TCP 5432 (0x1538). The entrypoint's temporary server during initdb listens on the socket only, so
+      # this can't pass before the real server is up.
+      test:
+        - CMD-SHELL
+        - >-
+          [ "$$(sed -n '8s/ *$$//p' "$$PGDATA/postmaster.pid" 2>/dev/null)" = ready ]
+          && grep -qsE '^ *[0-9]+: [0-9A-F]+:1538 [0-9A-F]+:0000 0A' /proc/net/tcp /proc/net/tcp6
     # Writes PG_HBA to pg_hba.conf before the image's own entrypoint starts the server. It comes from the environment,
     # not a Compose config, so that a change to it recreates the container on deploy.
     entrypoint:
