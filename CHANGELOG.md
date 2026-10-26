@@ -31,3 +31,7 @@ All notable changes to homelab-mnemosyne are documented here. The format follows
   and checks that port 5432 is listening. The old check logged into the server as `postgres` over TCP every 30
   seconds and was refused by `pg_hba.conf`, which wrote a connection line and two `FATAL` lines each time (about
   8,600 lines a day) and would have buried real failed logins. Deploying it recreates the `postgres` container.
+- `docs/migrating.md`, Steerhouse: the restore leaves out the dump's grants (`--no-privileges`), which name Argus'
+  `grafana_ro` before it exists here and stopped `--exit-on-error`; `grafana_ro` is created by hand as in
+  Steerhouse's README, then Steerhouse's `analytics-grant` gives it the `analytics` views back. Found in a rehearsal
+  against a copy of a live Steerhouse database.
