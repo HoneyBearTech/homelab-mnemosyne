@@ -24,3 +24,10 @@ All notable changes to homelab-mnemosyne are documented here. The format follows
   Dependabot.
 - Documentation: installing on Proxmox with ZFS replication and HA, moving each of the homelab's apps over,
   upgrading the engines, and rebuilding from the dumps.
+
+### Changed
+
+- PostgreSQL's health check no longer connects: it reads the server's own status (`postmaster.pid` says `ready`)
+  and checks that port 5432 is listening. The old check logged into the server as `postgres` over TCP every 30
+  seconds and was refused by `pg_hba.conf`, which wrote a connection line and two `FATAL` lines each time (about
+  8,600 lines a day) and would have buried real failed logins. Deploying it recreates the `postgres` container.
