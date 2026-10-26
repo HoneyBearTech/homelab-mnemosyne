@@ -112,8 +112,8 @@ jobs:
 
       # Every image the smoke test runs is pulled while logged in to Docker Hub (see the "Checks + tests" job),
       # and the login is gone before any of them starts: an image under test, such as a Dependabot update, mustn't
-      # be able to read the token. The logout runs without a token too: the runner image comes with a Docker Hub
-      # entry of its own, which the next step would otherwise find on Dependabot and fork pull requests.
+      # be able to read the token. The logout runs without a token too (fork pull requests): the runner image comes
+      # with a Docker Hub entry of its own, which the next step would otherwise find.
       - name: Pull the stack's images
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
