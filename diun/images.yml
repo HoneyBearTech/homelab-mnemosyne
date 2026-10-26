@@ -1,0 +1,32 @@
+# What Diun watches (its file provider; compose.yaml mounts this read-only). Only the two engines: their pins are
+# moved by hand, so these alerts are the only way a new release reaches the owner. Everything else in the stack is
+# Dependabot's.
+#
+# Each entry names the engine at the tag compose.yaml pins, and watches the repository's other tags too (watch_repo).
+# Discord gets a message when
+#   - the pinned tag is rebuilt upstream (status "update", a new digest): the official images are rebuilt for their
+#     base image's security fixes without a version change, and
+#   - a new tag matching include_tags appears (status "new"): a new minor or patch release, or a new major/series.
+# The first check after Diun starts with an empty database records what exists and posts nothing.
+#
+# The tag in each name must be the one compose.yaml pins, and include_tags must match it: CI checks both
+# (scripts/check_watches.py). An upgrade changes the pin here and in compose.yaml in the same pull request
+# (docs/upgrading.md).
+
+- name: docker.io/library/postgres:18.6-trixie
+  watch_repo: true
+  # No max_tags: Diun can't sort these tags as semver (the -trixie suffix after major.minor), so a limit would keep
+  # the oldest ones. include_tags keeps the set small.
+  include_tags:
+    # 18.x and every later major, on the same Debian release as the pin. Never the bare major (18-trixie), latest,
+    # or a beta (19beta1-trixie).
+    - ^(1[89]|[2-9][0-9])\.[0-9]+-trixie$
+
+- name: docker.io/library/mariadb:11.8.9-noble
+  watch_repo: true
+  # No max_tags: a later series' patches would otherwise crowd out the next 11.8 patch.
+  include_tags:
+    # Patches of the pinned LTS line (11.8.x), and every later series: the next LTS is the one to move to; a series
+    # in between is short-term (docs/upgrading.md#mariadb). On Ubuntu Noble, like the pin.
+    - ^11\.8\.[0-9]+-noble$
+    - ^(1[2-9]|[2-9][0-9])\.[0-9]+\.[0-9]+-noble$

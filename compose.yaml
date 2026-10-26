@@ -1,0 +1,283 @@
+# The Mnemosyne stack: the homelab's shared database server. One PostgreSQL and one MariaDB serve the other stacks'
+# apps over the LAN, each app with its own login and databases (scripts/db.sh creates them). Two exporters give
+# Argus' Prometheus the engines' metrics, and Diun watches the registries for new engine releases and alerts on
+# Discord. Every setting comes from .env (template: .env.example; reference: docs/interfaces.md); the passwords and
+# the Discord webhook come from files under CONFIG_ROOT/<service>/secrets (Docker secrets, at the end), which
+# `scripts/db.sh init` creates.
+#
+# Every image is pinned as name:tag@sha256:<digest>. The two engines are pinned by hand: Dependabot ignores them, Diun
+# alerts when upstream publishes a new tag or rebuilds the pinned one, and an upgrade is a pull request made by hand
+# (docs/upgrading.md). The exporters and Diun itself are Dependabot's, like every other homelab stack.
+# scripts/check_compose.py enforces the image and hardening policy, scripts/check_watches.py that every engine pin
+# is watched (docs/security.md#policy).
+# Each service's data lives in its own host folder, CONFIG_ROOT/<service>/config, and nowhere else: no named volumes,
+# and no path into /var/lib/docker/volumes, which a volume prune deletes (docs/installing.md#where-data-lives).
+
+name: homelab-mnemosyne
+
+# Every service starts with no Linux capabilities and can't gain privileges; none of these images needs one back:
+# each runs as PUID:PGID from the start (docs/security.md#hardening).
+x-hardened: &hardened
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+# Health check timing shared by every service; each service adds its own test. The long start_period covers an
+# engine's crash recovery or upgrade (MariaDB's runs mariadb-upgrade) after a failover or an image bump.
+x-healthcheck: &healthcheck
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 10m
+  start_interval: 5s
+
+services:
+  # --- Engines (pinned by hand; watched by Diun) -------------------------------------------------------------------
+
+  # PostgreSQL. Its own superuser (postgres) can log in only through the socket inside the container (docker compose
+  # exec; scripts/db.sh, scripts/backup.sh); every app logs in over the LAN with its own role, password (SCRAM) and
+  # TLS when the app asks for it, from DB_CLIENT_SUBNET only. The exporter's role, metrics, connects from this stack's
+  # own network. Anything else is refused (pg_hba.conf, from PG_HBA below).
+  postgres:
+    <<: *hardened
+    image: postgres:18.6-trixie@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6
+    container_name: postgres
+    user: ${PUID:?set PUID in .env}:${PGID:?set PGID in .env}
+    # The database is in its mount; the socket and the generated pg_hba.conf are in memory.
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/run/postgresql
+    # A clean shutdown writes a checkpoint, so the next start (or a failover's) needn't replay WAL; give it time.
+    stop_grace_period: 2m
+    restart: unless-stopped
+    shm_size: ${PG_SHM_SIZE:?set PG_SHM_SIZE in .env}
+    labels:
+      org.honeybeartech.mnemosyne.engine: postgres
+    healthcheck:
+      <<: *healthcheck
+      # Over TCP, not the socket: the entrypoint's temporary server during initdb listens on the socket only, so
+      # this can't pass before the real server is up. (A pg_hba reject still counts as "accepting connections".)
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "postgres"]
+    # Writes PG_HBA to pg_hba.conf before the image's own entrypoint starts the server. It comes from the environment,
+    # not a Compose config, so that a change to it recreates the container on deploy.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - umask 077 && printf '%s' "$$PG_HBA" >/tmp/pg_hba.conf && exec docker-entrypoint.sh "$$@"
+      - postgres
+    command:
+      - postgres
+      - -c
+      - hba_file=/tmp/pg_hba.conf
+      - -c
+      - password_encryption=scram-sha-256
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/tls/server.crt
+      - -c
+      - ssl_key_file=/tls/server.key
+      - -c
+      - ssl_min_protocol_version=TLSv1.2
+      - -c
+      - max_connections=${PG_MAX_CONNECTIONS:?set PG_MAX_CONNECTIONS in .env}
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:?set PG_SHARED_BUFFERS in .env}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:?set PG_EFFECTIVE_CACHE_SIZE in .env}
+      - -c
+      - work_mem=${PG_WORK_MEM:?set PG_WORK_MEM in .env}
+      - -c
+      - maintenance_work_mem=256MB
+      # SSD-backed ZFS: random reads cost about what sequential ones do.
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - log_min_duration_statement=1000
+      - -c
+      - log_connections=on
+      - -c
+      - log_disconnections=on
+    environment:
+      TZ: ${TZ:?set TZ in .env}
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      # Byte-order text sorting, independent of the host's glibc/ICU: a new image's libc can't corrupt an index.
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale-provider=builtin --builtin-locale=C.UTF-8 --data-checksums
+      # Read by docker-entrypoint-initdb.d/10-metrics.sh on the first start only.
+      METRICS_PASSWORD_FILE: /run/secrets/pg_metrics_password
+      # First match wins. The superuser never logs in from outside the container, with or without TLS; the exporter's
+      # role only from this stack's network (STACK_SUBNET); every other role from the apps' hosts (DB_CLIENT_SUBNET),
+      # with a password. Each role reaches only the databases it was granted CONNECT on (scripts/db.sh revokes it
+      # from PUBLIC). Everything else is refused.
+      PG_HBA: |
+        # TYPE  DATABASE  USER      ADDRESS                                                 METHOD
+        local   all       all                                                               trust
+        host    all       postgres  all                                                     reject
+        host    postgres  metrics   ${STACK_SUBNET:?set STACK_SUBNET in .env}           scram-sha-256
+        host    all       metrics   all                                                     reject
+        host    all       all       ${DB_CLIENT_SUBNET:?set DB_CLIENT_SUBNET in .env}       scram-sha-256
+        host    all       all       all                                                     reject
+    secrets:
+      - postgres_password
+      - pg_metrics_password
+    ports:
+      - "${PG_PORT:?set PG_PORT in .env}:5432"
+    volumes:
+      - ${CONFIG_ROOT:?set CONFIG_ROOT in .env}/postgres/config:/var/lib/postgresql
+      - ${CONFIG_ROOT:?set CONFIG_ROOT in .env}/postgres/tls:/tls:ro
+      - ./initdb/postgres:/docker-entrypoint-initdb.d:ro
+
+  # MariaDB (the LTS line). root logs in only from inside the container (MARIADB_ROOT_HOST=localhost); each app's
+  # user is created for MARIADB_CLIENT_HOST (the apps' hosts) with rights on its own databases only (scripts/db.sh).
+  # TLS is on by default since 11.4 (a certificate the server makes itself); a client that verifies it needs the
+  # stack's own certificate instead (docs/installing.md#tls). MARIADB_AUTO_UPGRADE runs mariadb-upgrade, after a
+  # backup of the system tables, the first time a new version starts.
+  mariadb:
+    <<: *hardened
+    image: mariadb:11.8.9-noble@sha256:f16d7a344413e519dff518f27bdb221388f84b0d274c97c4fb5f2cb0dc1b34fa
+    container_name: mariadb
+    user: ${PUID:?set PUID in .env}:${PGID:?set PGID in .env}
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run/mysqld
+    stop_grace_period: 2m
+    restart: unless-stopped
+    labels:
+      org.honeybeartech.mnemosyne.engine: mariadb
+    healthcheck:
+      <<: *healthcheck
+      # The image's own check, with the healthcheck@localhost user it creates on the first start.
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb-buffer-pool-size=${MARIADB_BUFFER_POOL_SIZE:?set MARIADB_BUFFER_POOL_SIZE in .env}
+      - --max-connections=${MARIADB_MAX_CONNECTIONS:?set MARIADB_MAX_CONNECTIONS in .env}
+      # Host names are never looked up: users are matched by address only, and a slow DNS can't stall logins.
+      - --skip-name-resolve
+    environment:
+      TZ: ${TZ:?set TZ in .env}
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/mariadb_root_password
+      MARIADB_ROOT_HOST: localhost
+      MARIADB_AUTO_UPGRADE: "1"
+      # Read by docker-entrypoint-initdb.d/10-exporter.sh on the first start only.
+      EXPORTER_PASSWORD_FILE: /run/secrets/mariadb_exporter_password
+      STACK_SUBNET: ${STACK_SUBNET:?set STACK_SUBNET in .env}
+    secrets:
+      - mariadb_root_password
+      - mariadb_exporter_password
+    ports:
+      - "${MARIADB_PORT:?set MARIADB_PORT in .env}:3306"
+    volumes:
+      - ${CONFIG_ROOT:?set CONFIG_ROOT in .env}/mariadb/config:/var/lib/mysql
+      - ./initdb/mariadb:/docker-entrypoint-initdb.d:ro
+
+  # --- Metrics for Argus (Dependabot-managed) ----------------------------------------------------------------------
+
+  # Logs in as metrics (pg_monitor: reads statistics, no table data) over this stack's network, where TLS adds
+  # nothing. The metrics port answers anyone on the LAN, like Argus' other exporters: it carries no row data.
+  postgres-exporter:
+    <<: *hardened
+    image: prometheuscommunity/postgres-exporter:v0.20.1@sha256:ac5ec343104fae0e2d84a27bb8d69b38430a11910c5382cad85d478d2bab713e
+    container_name: postgres-exporter
+    user: ${PUID:?set PUID in .env}:${PGID:?set PGID in .env}
+    read_only: true
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9187/metrics"]
+    environment:
+      DATA_SOURCE_URI: postgres:5432/postgres?sslmode=disable
+      DATA_SOURCE_USER: metrics
+      DATA_SOURCE_PASS_FILE: /run/secrets/pg_metrics_password
+    secrets:
+      - pg_metrics_password
+    ports:
+      - "${PG_EXPORTER_PORT:?set PG_EXPORTER_PORT in .env}:9187"
+
+  # Logs in as exporter (PROCESS, REPLICATION CLIENT, SELECT on performance_schema), from this stack's network only.
+  mysqld-exporter:
+    <<: *hardened
+    image: prom/mysqld-exporter:v0.21.0@sha256:afad0c59a154fea24ca5ea0e6f95f2b0b168601b111266963dc8a347715b5318
+    container_name: mysqld-exporter
+    user: ${PUID:?set PUID in .env}:${PGID:?set PGID in .env}
+    read_only: true
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9104/metrics"]
+    command:
+      - --config.my-cnf=/run/secrets/mysqld_exporter_cnf
+      - --mysqld.address=mariadb:3306
+    secrets:
+      - mysqld_exporter_cnf
+    ports:
+      - "${MYSQLD_EXPORTER_PORT:?set MYSQLD_EXPORTER_PORT in .env}:9104"
+
+  # --- Upgrade watch (Dependabot-managed) --------------------------------------------------------------------------
+
+  # Diun reads the engines it watches from diun/images.yml (the file provider only: no Docker socket) and posts to
+  # Discord when a new tag appears or the pinned tag is rebuilt. It never changes anything; the upgrade is a pull
+  # request (docs/upgrading.md). Its own state (which tags it has seen) is in CONFIG_ROOT/diun/config.
+  diun:
+    <<: *hardened
+    image: crazymax/diun:4.33.1@sha256:8cc638b4c54e8a0c47898a51b20dae73037ad43310168b5da543a311dc668f77
+    container_name: diun
+    user: ${PUID:?set PUID in .env}:${PGID:?set PGID in .env}
+    read_only: true
+    tmpfs:
+      - /tmp
+    restart: unless-stopped
+    healthcheck:
+      <<: *healthcheck
+      # Its database exists once the first check (at start) has run.
+      test: ["CMD", "test", "-s", "/data/diun.db"]
+    environment:
+      TZ: ${TZ:?set TZ in .env}
+      LOG_LEVEL: info
+      DIUN_DB_PATH: /data/diun.db
+      DIUN_WATCH_SCHEDULE: ${DIUN_SCHEDULE:?set DIUN_SCHEDULE in .env}
+      DIUN_WATCH_RUNONSTARTUP: "true"
+      # The first check records what exists without alerting; from then on every new tag or rebuild is posted.
+      DIUN_WATCH_FIRSTCHECKNOTIF: "false"
+      DIUN_PROVIDERS_FILE_FILENAME: /etc/diun/images.yml
+      DIUN_NOTIF_DISCORD_WEBHOOKURLFILE: /run/secrets/discord_webhook
+    secrets:
+      - discord_webhook
+    volumes:
+      - ${CONFIG_ROOT:?set CONFIG_ROOT in .env}/diun/config:/data
+      - ./diun/images.yml:/etc/diun/images.yml:ro
+
+networks:
+  # Fixed so that pg_hba.conf and MariaDB's exporter user can name it (STACK_SUBNET).
+  default:
+    ipam:
+      config:
+        - subnet: ${STACK_SUBNET:?set STACK_SUBNET in .env}
+
+# Created by `scripts/db.sh init` (random), owned by PUID:PGID, mode 0600; never in the repo, .env or the dumps.
+secrets:
+  postgres_password:
+    file: ${CONFIG_ROOT:?set CONFIG_ROOT in .env}/postgres/secrets/postgres_password
+  pg_metrics_password:
+    file: ${CONFIG_ROOT:?set CONFIG_ROOT in .env}/postgres/secrets/metrics_password
+  mariadb_root_password:
+    file: ${CONFIG_ROOT:?set CONFIG_ROOT in .env}/mariadb/secrets/root_password
+  mariadb_exporter_password:
+    file: ${CONFIG_ROOT:?set CONFIG_ROOT in .env}/mariadb/secrets/exporter_password
+  mysqld_exporter_cnf:
+    file: ${CONFIG_ROOT:?set CONFIG_ROOT in .env}/mysqld-exporter/secrets/my.cnf
+  # The Discord channel's webhook URL; whoever has it can post there.
+  discord_webhook:
+    file: ${CONFIG_ROOT:?set CONFIG_ROOT in .env}/diun/secrets/discord_webhook

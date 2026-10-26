@@ -1,0 +1,37 @@
+version: 2
+# Patch, minor and major updates of the exporters, Diun, the check tools and the Actions are auto-merged once every
+# required check passes (workflows/dependabot-auto-merge.yml), as in the other homelab stacks. A merge deploys: the
+# server's pull agent applies main within minutes, and Compose recreates only the service whose image changed.
+#
+# The two database engines are not Dependabot's (owner 2026-10-26): every app in the homelab depends on them, and a
+# new engine version, even a patch, restarts every app's database. Diun alerts on Discord instead
+# (diun/images.yml), and the upgrade is a pull request made by hand, merged at a quiet time (docs/upgrading.md).
+# scripts/check_watches.py fails CI if an engine is pinned in compose.yaml but not ignored here.
+updates:
+  # The stack's images in compose.yaml (version tag and digest).
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    assignees: ["HoneyBearTech"]
+    ignore:
+      - dependency-name: "postgres"
+      - dependency-name: "mariadb"
+
+  # The check and test tools (requirements-dev.txt), pinned with hashes.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    assignees: ["HoneyBearTech"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    assignees: ["HoneyBearTech"]
+    groups:
+      # init, analyze and upload-sarif must share one version.
+      codeql:
+        patterns:
+          - "github/codeql-action*"

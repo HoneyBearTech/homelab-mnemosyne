@@ -1,0 +1,14 @@
+# Starts homelab-mnemosyne-backup.service every night. Nothing is stopped: each database is dumped from a snapshot
+# while its app keeps working. 03:30 runs before the other stacks' 04:30 backups, so the night's dumps are on the
+# backup server before those stacks stop their services. Persistent: a run missed while the VM was off happens at
+# the next boot.
+[Unit]
+Description=Nightly dump of every database on the homelab-mnemosyne stack
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

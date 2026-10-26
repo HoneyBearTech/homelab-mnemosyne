@@ -1,0 +1,17 @@
+# Runs scripts/scheduled-backup.sh once; started by homelab-mnemosyne-backup.timer. A systemd user unit: install it for
+# the user who runs the stack (docs/installing.md#scheduled-backups). %h is that user's home directory: change
+# both paths if the checkout lives elsewhere.
+[Unit]
+Description=Dump every database on the homelab-mnemosyne stack and copy it off the host
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/homelab-mnemosyne
+ExecStart=%h/homelab-mnemosyne/scripts/scheduled-backup.sh
+# Runs at a low priority, so the engines' clients stay responsive while dumps are compressed. Not the idle I/O class:
+# a long dump holds a snapshot open, and idle I/O waits behind every other disk user on the host.
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
