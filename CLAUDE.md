@@ -33,9 +33,9 @@ dumps databases instead of archiving folders, and never stops a service to back 
 - No secrets: passwords, the TLS key and the webhook are files under `CONFIG_ROOT/<service>/secrets` (and
   `postgres/tls`) on the host, created by `scripts/db.sh init`, never in `compose.yaml`, `.env` or the `*.example`
   files. An app's password is printed once by `db.sh` and kept only in that app's settings on its own host.
-- Keep the repo on track for OpenSSF Baseline Levels 1 and 2 and the Best Practices badges (the project isn't
-  registered on bestpractices.dev yet: an owner step). If a change would break a met criterion (unpinning an image
-  or an Action, a workflow without `permissions:`, dropping the coverage floor), say so before making it.
+- Keep the repo on track for OpenSSF Baseline Levels 1 and 2 and the Best Practices badges (project 15951 on
+  bestpractices.dev). If a change would break a met criterion (unpinning an image or an Action, a workflow without
+  `permissions:`, dropping the coverage floor), say so before making it.
 
 ## Rules for the stack
 - **Every image is pinned as `name:tag@sha256:<digest>`.** Never `latest`, never tag-only.

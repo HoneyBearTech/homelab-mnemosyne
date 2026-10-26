@@ -3,6 +3,8 @@
 [![CI](https://github.com/HoneyBearTech/homelab-mnemosyne/actions/workflows/ci.yml/badge.svg)](https://github.com/HoneyBearTech/homelab-mnemosyne/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/HoneyBearTech/homelab-mnemosyne/actions/workflows/codeql.yml/badge.svg)](https://github.com/HoneyBearTech/homelab-mnemosyne/actions/workflows/codeql.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/HoneyBearTech/homelab-mnemosyne/badge)](https://scorecard.dev/viewer/?uri=github.com/HoneyBearTech/homelab-mnemosyne)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15951/badge)](https://www.bestpractices.dev/projects/15951)
+[![OpenSSF Baseline](https://www.bestpractices.dev/projects/15951/baseline)](https://www.bestpractices.dev/projects/15951)
 
 Docker Compose stack for Mnemosyne, the homelab's shared database server: one PostgreSQL and one MariaDB that the
 other stacks' apps use instead of each keeping its own database, on a Proxmox VM that replicates to a second node
