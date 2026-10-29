@@ -70,12 +70,39 @@ SONARR__POSTGRES__LOGDB=sonarr_log
 ```
 
 The Servarr wiki's own guide (`wiki.servarr.com/<app>/postgres-setup`) is the reference, and it is blunt: moving an
-existing SQLite database is **unsupported**, and its pgloader recipe was written against older PostgreSQL. Its
-steps: start the app once on the empty databases, stop it, empty the tables the app seeded (for Sonarr:
-`QualityProfiles`, `QualityDefinitions`, `DelayProfiles`, `Metadata`, `Config`, `VersionInfo`, `ScheduledTasks`; the
-guide lists each app's), run pgloader with `--with "quote identifiers" --with "data only"` from the app's `.db` file
-into the main database (the Servarr maintainers publish a pgloader build that works with current PostgreSQL), then
-reset the sequences with the `setval` statements the guide lists. The log database isn't copied: it starts empty.
+existing SQLite database is **unsupported**, and its pgloader steps were written for PostgreSQL 14 (for 18 it says to
+start fresh). They do work on this server's PostgreSQL 18, with three changes, as a rehearsal and the move of
+Prowlarr showed (identical row counts in every table, the app's housekeeping vacuum running as the database's owner):
+
+1. **Settings.** The app reads them from the environment (above) or from its `config.xml` (`PostgresHost`,
+   `PostgresPort`, `PostgresUser`, `PostgresPassword`, `PostgresMainDb`, `PostgresLogDb`); `config.xml` needs no
+   change to its stack. Keep a copy of the old `config.xml`, and never overwrite that copy if a step is run twice
+   (`cp -n`).
+2. **First start.** Stop the app cleanly, so its `.db` file has no `-wal` beside it, copy it here, and start the app
+   once on the empty databases: it creates its tables (both databases at its current migration). Stop it again.
+3. **Empty every table** in the main database, not only the ones the guide lists: the first start fills some
+   (`VersionInfo`, `ScheduledTasks`, the default profiles), and loading "data only" into them would collide:
+
+   ```sh
+   echo "DO \$\$ BEGIN EXECUTE (SELECT 'TRUNCATE ' || string_agg(format('%I.%I', schemaname, tablename), ', ')
+     || ' RESTART IDENTITY' FROM pg_tables WHERE schemaname = 'public'); END \$\$;" |
+     docker compose exec -T postgres psql -U postgres -d sonarr_main -v ON_ERROR_STOP=1
+   ```
+
+4. **Copy the data with the Servarr maintainers' pgloader build**, run here so it reaches the database from inside
+   the clients' range, with `sslmode=disable`: pgloader insists on verifying the certificate under `require`, and
+   ignores its own `--no-ssl-cert-verification`; this connection never leaves the server. The password comes from an
+   env file (`PGPASSWORD=…`, mode 600), not the command line:
+
+   ```sh
+   docker run --rm --network host --env-file pg.env -v "$PWD/sonarr.db:/app.db:ro" ghcr.io/roxedus/pgloader \
+     --with "quote identifiers" --with "data only" /app.db "postgresql://sonarr@<this server>/sonarr_main?sslmode=disable"
+   ```
+
+   pgloader resets every sequence itself, so the guide's `setval` statements aren't needed; check that none is
+   behind its table's highest id, and compare each table's row count with the `.db` file before starting the app.
+5. **Start it and check** its own counts (for Prowlarr: indexers, apps, history) and its log. The log database isn't
+   copied: it starts empty.
 
 If the rehearsal fails for an app, the fallbacks are to leave it on SQLite (nothing else depends on it moving) or to
 start it fresh on PostgreSQL and rebuild it (import lists and a rescan restore the library; the history is lost).
