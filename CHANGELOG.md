@@ -35,3 +35,6 @@ All notable changes to homelab-mnemosyne are documented here. The format follows
   `grafana_ro` before it exists here and stopped `--exit-on-error`; `grafana_ro` is created by hand as in
   Steerhouse's README, then Steerhouse's `analytics-grant` gives it the `analytics` views back. Found in a rehearsal
   against a copy of a live Steerhouse database.
+- `docs/migrating.md`, the *arr apps: the Servarr pgloader recipe as it works on PostgreSQL 18, from a rehearsal and
+  the move of Prowlarr: settings in `config.xml`, empty every table after the first start, pgloader with
+  `sslmode=disable` from this server (it rejects a self-signed certificate under `require`), no `setval` list.
