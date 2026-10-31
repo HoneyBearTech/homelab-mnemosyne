@@ -77,7 +77,9 @@ Prowlarr showed (identical row counts in every table, the app's housekeeping vac
 1. **Settings.** The app reads them from the environment (above) or from its `config.xml` (`PostgresHost`,
    `PostgresPort`, `PostgresUser`, `PostgresPassword`, `PostgresMainDb`, `PostgresLogDb`); `config.xml` needs no
    change to its stack. Keep a copy of the old `config.xml`, and never overwrite that copy if a step is run twice
-   (`cp -n`).
+   (`cp -n`). With the password in it, `config.xml` is a secret: the apps leave it readable by every account on the
+   host (mode 644, or 666), so `chmod 600` it and the copy. The app runs as the file's owner, so it can still read
+   it, and Prowlarr kept the file's mode when it rewrote it.
 2. **First start.** Stop the app cleanly, so its `.db` file has no `-wal` beside it, copy it here, and start the app
    once on the empty databases: it creates its tables (both databases at its current migration). Stop it again.
 3. **Empty every table** in the main database, not only the ones the guide lists: the first start fills some
