@@ -18,7 +18,7 @@ its boundaries are drawn tighter than a single app's.
 | Every app's data | One app (or whoever takes it over) reading or changing another's | One login per app; each database's `CONNECT` granted to its owner only; MariaDB grants per database; checked by the smoke test |
 | The engines | An administrator login from the network | PostgreSQL's `postgres` rejected for every network address (`pg_hba.conf`); MariaDB's root exists for `localhost` only |
 | The engines | Logins from anywhere on the LAN | App logins from `DB_CLIENT_SUBNET` only; the exporters' and DbGate's (`dbviewer`) from the stack's own network only; everything else rejected |
-| Every app's data | Read through the web GUI | DbGate answers on `127.0.0.1` only (an SSH tunnel reaches it); its login, `dbviewer`, sees structure and no rows; it holds no password and asks for it at each connection; checked by the smoke test |
+| Every app's data | Read through the web GUI | DbGate answers on `127.0.0.1` by default (an SSH tunnel reaches it), or on one address that a `DOCKER-USER` rule opens to the reverse proxy only, whose access list asks for a password; its login, `dbviewer`, sees structure and no rows; it holds no password and asks for it at each connection; checked by the smoke test |
 | Passwords | Sniffed on the LAN | SCRAM-SHA-256 (PostgreSQL), which never sends the password; TLS offered by both engines |
 | Passwords | Leaked from the host | Secret files 0600 in 0700 folders, owned by `PUID`; passed to containers as Docker secrets, to the engines on stdin, never as process arguments or in `.env` |
 | The data | Lost: a node, a disk, a bad upgrade, a bad migration | ZFS replication and HA to the second node; nightly dumps copied off the host; weekly whole-VM backups; a backup before every engine upgrade |
@@ -37,9 +37,12 @@ Out of scope: someone with root on the VM or a Proxmox node (they own the data),
    the firewall between VLANs allows it, limit them to the app servers' VLAN there too.
 2. **LAN → the exporters' ports.** Unauthenticated, like Argus' other exporters: they publish statistics (database
    names and sizes, connection counts), never rows.
-3. **The VM's own users → DbGate.** It has no login of its own and answers on `127.0.0.1`: anyone who can open a
-   connection on the VM (or an SSH tunnel to it) reaches its page. Without `dbviewer`'s password it can open no
-   database, and with it only the databases' structure.
+3. **The VM's own users (or the reverse proxy) → DbGate.** It has no login of its own and answers on `127.0.0.1`:
+   anyone who can open a connection on the VM (or an SSH tunnel to it) reaches its page. Published for a reverse
+   proxy instead (`DBGATE_BIND_ADDRESS`), a `DOCKER-USER` rule admits the proxy's host only, the proxy's access
+   list (LAN or VPN, plus a password) is the page's login, and the hop from the proxy is plain HTTP, so
+   `dbviewer`'s password crosses the LAN in the clear when typed. Either way, without `dbviewer`'s password it can
+   open no database, and with it only the databases' structure.
 4. **The stack → the internet.** Diun calls the registries and Discord. DbGate calls out only when you ask it to
    (its changelog, its plugin catalogue on npm); its usage analytics are off (`USAGE_ANALYTICS=false`, and it sends
    none without an analytics key). Nothing else calls out.

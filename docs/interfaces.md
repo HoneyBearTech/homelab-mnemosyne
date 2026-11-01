@@ -19,7 +19,8 @@ Every setting is required (`compose.yaml` refuses to start without it) and has a
 | `MARIADB_PORT` | `3306` | MariaDB's published port |
 | `PG_EXPORTER_PORT` | `9187` | postgres_exporter's metrics port, for Argus' Prometheus |
 | `MYSQLD_EXPORTER_PORT` | `9104` | mysqld_exporter's metrics port, for Argus' Prometheus |
-| `DBGATE_PORT` | `3000` | DbGate's port, published on `127.0.0.1` only (reach it through an SSH tunnel, [browsing.md](browsing.md)) |
+| `DBGATE_PORT` | `3000` | DbGate's port ([browsing.md](browsing.md)) |
+| `DBGATE_BIND_ADDRESS` | `127.0.0.1` | The one address DbGate is published on: `127.0.0.1` for an SSH tunnel, or the VM's address for a reverse proxy, with a `DOCKER-USER` rule admitting the proxy only ([browsing.md](browsing.md#through-a-reverse-proxy)). Optional |
 | `PG_MAX_CONNECTIONS` | `300` | PostgreSQL `max_connections`: every app's pool together, plus headroom |
 | `PG_SHARED_BUFFERS` | `2GB` | PostgreSQL `shared_buffers` (about a quarter of the VM's memory) |
 | `PG_EFFECTIVE_CACHE_SIZE` | `5GB` | PostgreSQL `effective_cache_size` (what the planner may assume the OS caches) |
@@ -43,7 +44,7 @@ on the host).
 | 3306 | MariaDB | apps on `DB_CLIENT_SUBNET`, each with its own user | MySQL protocol; TLS offered |
 | 9187 | postgres_exporter | Argus' Prometheus | HTTP `/metrics` |
 | 9104 | mysqld_exporter | Argus' Prometheus | HTTP `/metrics` |
-| 3000 | DbGate | you, through an SSH tunnel: published on `127.0.0.1` only | HTTP (the tunnel encrypts it) |
+| 3000 | DbGate | you, through an SSH tunnel (on `127.0.0.1`, the default), or the reverse proxy only (on `DBGATE_BIND_ADDRESS`, with a `DOCKER-USER` rule) | HTTP (the tunnel encrypts it; behind a proxy, plain HTTP from the proxy) |
 
 Diun has no port: it only calls out (the registries, Discord).
 
