@@ -79,7 +79,12 @@ Prowlarr showed (identical row counts in every table, the app's housekeeping vac
    change to its stack. Keep a copy of the old `config.xml`, and never overwrite that copy if a step is run twice
    (`cp -n`). With the password in it, `config.xml` is a secret: the apps leave it readable by every account on the
    host (mode 644, or 666), so `chmod 600` it and the copy. The app runs as the file's owner, so it can still read
-   it, and Prowlarr kept the file's mode when it rewrote it.
+   it, and Prowlarr kept the file's mode when it rewrote it. The password also reaches the app's log: at every start
+   it logs its connection string, password included (`*** Migrating Database=…;Password=…`), to its console (Docker's
+   log) and to `logs/*.txt` in its folder, which it leaves readable by every account too. So never print the app's
+   start-up log while you check it (count errors, don't show the lines), and if one is printed or shared, give the
+   login a new password (`scripts/db.sh password pg sonarr`, then the app's `PostgresPassword`, then restart it). A
+   log collector that masks `password=` values keeps it out of the collected copy.
 2. **First start.** Stop the app cleanly, so its `.db` file has no `-wal` beside it, copy it here, and start the app
    once on the empty databases: it creates its tables (both databases at its current migration). Stop it again.
 3. **Empty every table** in the main database, not only the ones the guide lists: the first start fills some
