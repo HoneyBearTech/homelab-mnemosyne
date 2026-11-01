@@ -98,8 +98,13 @@ Prowlarr showed (identical row counts in every table, the app's housekeeping vac
 
    ```sh
    docker run --rm --network host --env-file pg.env -v "$PWD/sonarr.db:/app.db:ro" ghcr.io/roxedus/pgloader \
-     --with "quote identifiers" --with "data only" /app.db "postgresql://sonarr@<this server>/sonarr_main?sslmode=disable"
+     --with "quote identifiers" --with "data only" --with "prefetch rows = 100" --with "batch size = 1MB" \
+     /app.db "postgresql://sonarr@<this server>/sonarr_main?sslmode=disable"
    ```
+
+   The two batch options keep pgloader's memory small. Without them a large database (Sonarr's, 700 MB and 470,000
+   rows) exhausts its heap partway through ("Heap exhausted, game over"), leaving some tables loaded and the rest
+   empty; with them the same copy took 21 seconds. If it does fail, empty every table again (step 3) and rerun.
 
    pgloader resets every sequence itself, so the guide's `setval` statements aren't needed; check that none is
    behind its table's highest id, and compare each table's row count with the `.db` file before starting the app.
