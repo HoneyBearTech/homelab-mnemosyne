@@ -5,10 +5,26 @@ keys and indexes, sizes, and an ER diagram of a database's tables. It runs in th
 `compose.yaml`) and sees only the databases' **structure**: its login can't read a single row. For the engines'
 metrics (connections, sizes over time, activity) use Argus' Databases dashboard instead.
 
+- [On an installation from before DbGate](#on-an-installation-from-before-dbgate)
 - [Once: its login](#once-its-login)
 - [Opening it](#opening-it)
 - [What it can and can't do](#what-it-can-and-cant-do)
 - [A new password](#a-new-password)
+
+## On an installation from before DbGate
+
+DbGate needs a setting and a folder an older installation doesn't have. Without the setting, `docker compose`
+refuses the whole file, so the pull agent's deploy stops (`required variable DBGATE_PORT is missing a value`),
+moves the checkout back and changes nothing; without the folder, Docker creates it as root and DbGate can't write
+to it. Before the merge that brings DbGate (or after such a failed deploy), on the VM:
+
+```sh
+printf 'DBGATE_PORT=3000\n' >> .env
+mkdir -p "<CONFIG_ROOT>/dbgate/config"   # as PUID; or `scripts/db.sh init` once the checkout has DbGate
+```
+
+After a failed deploy the agent waits before it tries the same commit again; to deploy now, start its service
+(`systemctl --user start homelab-pull@mnemosyne.service`).
 
 ## Once: its login
 

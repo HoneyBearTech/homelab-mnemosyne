@@ -31,6 +31,12 @@ All notable changes to homelab-mnemosyne are documented here. The format follows
   `db.sh create` grants `dbviewer` each new PostgreSQL database; the smoke test proves it sees a table's columns and
   can't read the table on both engines ([docs/browsing.md](docs/browsing.md)).
 
+### Upgrading
+
+- DbGate adds a required setting, `DBGATE_PORT`, and a folder, `CONFIG_ROOT/dbgate/config`. On an installation
+  from before it, add both before the merge deploys, or the deploy stops at `docker compose config` and changes
+  nothing ([docs/browsing.md](docs/browsing.md#on-an-installation-from-before-dbgate)).
+
 ### Changed
 
 - PostgreSQL's health check no longer connects: it reads the server's own status (`postmaster.pid` says `ready`)
