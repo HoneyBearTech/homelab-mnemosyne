@@ -28,6 +28,9 @@ All notable changes to homelab-mnemosyne are documented here. The format follows
   indexes, sizes and ER diagrams. It answers on `127.0.0.1` only (reach it through an SSH tunnel; `DBGATE_PORT`),
   runs as `PUID`:`PGID` on a read-only root filesystem, holds no password, and logs in as `dbviewer`
   (`scripts/db.sh viewer pg|mariadb`), which connects from the stack's network only and sees structure, never rows.
+- `DBGATE_BIND_ADDRESS`: DbGate can be published on the VM's address for a reverse proxy instead of `127.0.0.1`,
+  with a `DOCKER-USER` rule so only the proxy reaches it and the proxy's access list as its login
+  (docs/browsing.md). Optional: without it nothing changes.
   `db.sh create` grants `dbviewer` each new PostgreSQL database; the smoke test proves it sees a table's columns and
   can't read the table on both engines ([docs/browsing.md](docs/browsing.md)).
 

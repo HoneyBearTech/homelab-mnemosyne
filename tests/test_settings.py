@@ -97,9 +97,10 @@ def test_dbviewer_logs_in_from_the_stacks_network_only() -> None:
     assert mine[-1] < apps
 
 
-def test_dbgate_is_published_on_loopback_only_and_holds_no_password() -> None:
+def test_dbgate_is_published_on_one_address_loopback_by_default_and_holds_no_password() -> None:
+    # Never on every address: a proxy's DOCKER-USER rule matches the one address it's published on.
     dbgate = compose()["services"]["dbgate"]
-    assert all(port.startswith("127.0.0.1:") for port in dbgate["ports"])
+    assert all(port.startswith("${DBGATE_BIND_ADDRESS:-127.0.0.1}:") for port in dbgate["ports"])
     env = dbgate["environment"]
     assert not [
         key

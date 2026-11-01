@@ -20,7 +20,7 @@ and restarts there if its node fails. Version-pinned and kept as code, like the 
   or all of them onto a new server.
 - **Metrics for Argus** from postgres_exporter and mysqld_exporter.
 - **A look inside without the data.** DbGate shows every database's tables, columns, keys and diagrams through an
-  SSH tunnel, logged in as `dbviewer`, which can't read a row ([docs/browsing.md](docs/browsing.md)).
+  SSH tunnel (or a reverse proxy), logged in as `dbviewer`, which can't read a row ([docs/browsing.md](docs/browsing.md)).
 
 > [!WARNING]
 > Every app that moves here depends on this one server. Do the drills in
@@ -34,7 +34,7 @@ and restarts there if its node fails. Version-pinned and kept as code, like the 
 - [Installing](docs/installing.md): the VM, ZFS replication and HA, the stack, TLS, backups, Argus, the drills
 - [Migrating](docs/migrating.md): moving each app over, with its settings; what stays where it is
 - [Upgrading](docs/upgrading.md): what Diun's messages mean; rebuilds, minors, a PostgreSQL major, MariaDB's LTS
-- [Browsing](docs/browsing.md): the databases' structure in a browser, through an SSH tunnel
+- [Browsing](docs/browsing.md): the databases' structure in a browser, through an SSH tunnel or a reverse proxy
 - [Interfaces](docs/interfaces.md): every setting, port, file and script
 - [Architecture](docs/architecture.md), [Security](docs/security.md), [Rebuilding](docs/rebuilding.md),
   [Dependencies](docs/dependencies.md), [Verifying releases](docs/verifying-releases.md), [Roadmap](docs/roadmap.md)

@@ -236,10 +236,11 @@ services:
   # --- Browsing (Dependabot-managed) -------------------------------------------------------------------------------
 
   # DbGate, a web GUI for both engines: databases, tables, columns, keys, indexes and diagrams. It answers on
-  # 127.0.0.1 only, so it is reached through an SSH tunnel to this host (docs/browsing.md), and it logs in as
-  # dbviewer (`scripts/db.sh viewer`), which sees every database's structure and no table's rows. DbGate can't read a
-  # password from a file, so it holds none: it asks for dbviewer's each time it connects. Its own state (saved
-  # scripts, settings) is in CONFIG_ROOT/dbgate/config.
+  # DBGATE_BIND_ADDRESS, 127.0.0.1 unless .env says otherwise: reached through an SSH tunnel to this host, or from a
+  # reverse proxy when it is the VM's address and a DOCKER-USER rule admits the proxy only (docs/browsing.md). It
+  # logs in as dbviewer (`scripts/db.sh viewer`), which sees every database's structure and no table's rows. DbGate
+  # can't read a password from a file, so it holds none: it asks for dbviewer's each time it connects. Its own state
+  # (saved scripts, settings) is in CONFIG_ROOT/dbgate/config.
   dbgate:
     <<: *hardened
     image: dbgate/dbgate:7.3.3@sha256:c9b3c97af5cde488e2e722e8d96bbd80ded3ca7013deb2e14c8f095ae818e6d3
@@ -281,7 +282,7 @@ services:
       PASSWORD_MODE_mariadb: askPassword
       READONLY_mariadb: "1"
     ports:
-      - "127.0.0.1:${DBGATE_PORT:?set DBGATE_PORT in .env}:3000"
+      - "${DBGATE_BIND_ADDRESS:-127.0.0.1}:${DBGATE_PORT:?set DBGATE_PORT in .env}:3000"
     volumes:
       - ${CONFIG_ROOT:?set CONFIG_ROOT in .env}/dbgate/config:/data
 
