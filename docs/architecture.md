@@ -8,6 +8,8 @@
               ┌──────────── the VM (Proxmox, HA) ─┴────────────────────────┐
               │  postgres ◄── postgres-exporter        diun ──► registries │
               │  mariadb  ◄── mysqld-exporter               └──► Discord   │
+              │     ▲                                                      │
+              │     └── dbgate (127.0.0.1:3000) ◄── your SSH tunnel        │
               │  CONFIG_ROOT on the data disk (ZFS zvol)                   │
               └───────────────┬─────────────────────────────┬──────────────┘
                  ZFS replication, every few minutes      nightly dumps (rsync/SSH),
@@ -23,9 +25,11 @@
 | `postgres-exporter` | `prometheuscommunity/postgres-exporter` | PostgreSQL's metrics for Argus, as the `pg_monitor` role `metrics` |
 | `mysqld-exporter` | `prom/mysqld-exporter` | MariaDB's metrics for Argus |
 | `diun` | `crazymax/diun` | Watches the two engines' tags; posts new releases and rebuilds to Discord |
+| `dbgate` | `dbgate/dbgate` | A web GUI showing both engines' structure (tables, columns, keys, diagrams), as `dbviewer`: no rows ([browsing.md](browsing.md)) |
 
-All five share one Docker network with a fixed range (`STACK_SUBNET`), so the engines can admit the exporters by
-address. The engines publish their ports on the VM's address for the apps; the exporters publish theirs for Argus.
+All six share one Docker network with a fixed range (`STACK_SUBNET`), so the engines can admit the exporters and
+DbGate by address. The engines publish their ports on the VM's address for the apps; the exporters publish theirs
+for Argus; DbGate publishes its port on `127.0.0.1` only, for an SSH tunnel.
 
 ## Data flow
 

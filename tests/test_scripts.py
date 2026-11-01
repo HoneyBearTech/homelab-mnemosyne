@@ -35,7 +35,19 @@ def lib(env: dict[str, str], script: str) -> subprocess.CompletedProcess[str]:
 
 @pytest.mark.parametrize(
     "name",
-    ["Sonarr", "sonarr-main", "1radarr", "", "a" * 64, "x;drop", "postgres", "metrics", "root", "information_schema"],
+    [
+        "Sonarr",
+        "sonarr-main",
+        "1radarr",
+        "",
+        "a" * 64,
+        "x;drop",
+        "postgres",
+        "metrics",
+        "root",
+        "information_schema",
+        "dbviewer",
+    ],
 )
 def test_db_refuses_bad_or_reserved_names(env: dict[str, str], name: str) -> None:
     result = run(env, str(ROOT / "scripts/db.sh"), "create", "pg", "sonarr", name)
@@ -49,7 +61,10 @@ def test_db_refuses_unknown_engine(env: dict[str, str]) -> None:
     assert "pg or mariadb" in result.stderr
 
 
-@pytest.mark.parametrize("args", [(), ("create", "pg", "app"), ("password", "pg"), ("list", "x"), ("nope",)])
+@pytest.mark.parametrize(
+    "args",
+    [(), ("create", "pg", "app"), ("password", "pg"), ("viewer",), ("viewer", "pg", "x"), ("list", "x"), ("nope",)],
+)
 def test_db_usage(env: dict[str, str], args: tuple[str, ...]) -> None:
     result = run(env, str(ROOT / "scripts/db.sh"), *args)
     assert result.returncode == 2
@@ -83,6 +98,7 @@ def test_db_init_creates_secrets_once(env: dict[str, str], tmp_path: Path) -> No
     exporter = (config / "mariadb/secrets/exporter_password").read_text(encoding="utf-8")
     assert f"password={exporter}" in (config / "mysqld-exporter/secrets/my.cnf").read_text(encoding="utf-8")
     assert (config / "postgres/tls/server.key").stat().st_mode & 0o777 == 0o600
+    assert (config / "dbgate/config").is_dir()
     second = run(env, str(ROOT / "scripts/db.sh"), "init")
     assert second.returncode == 0, second.stderr
     assert "created" not in second.stdout

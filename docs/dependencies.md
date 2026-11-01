@@ -6,12 +6,12 @@ What the stack runs, how each piece is pinned and updated, and how vulnerabiliti
 | --- | --- | --- | --- |
 | PostgreSQL (`postgres`) | `compose.yaml` | tag and digest | hand, after Diun's alert ([upgrading.md](upgrading.md)) |
 | MariaDB (`mariadb`) | `compose.yaml` | tag and digest | hand, after Diun's alert |
-| postgres_exporter, mysqld_exporter, Diun | `compose.yaml` | tag and digest | Dependabot, auto-merged once the checks pass |
+| postgres_exporter, mysqld_exporter, Diun, DbGate | `compose.yaml` | tag and digest | Dependabot, auto-merged once the checks pass |
 | The check and test tools | `requirements-dev.txt` | version and hash | Dependabot |
 | GitHub Actions, CI images | `.github/workflows/`, `.gitlab-ci.yml` | commit SHA / digest | Dependabot (Actions); by hand (CI images) |
 
 All are open source: PostgreSQL (PostgreSQL License), MariaDB (GPL-2.0), the exporters (Apache-2.0), Diun
-(MIT).
+(MIT), DbGate's community edition (GPL-3.0).
 
 ## Choosing an engine version
 
@@ -24,7 +24,7 @@ All are open source: PostgreSQL (PostgreSQL License), MariaDB (GPL-2.0), the exp
 ## Vulnerabilities
 
 The weekly scan (`.github/workflows/scan.yml`) scans every pinned image and posts the findings to code scanning.
-For the exporters and Diun, fixes arrive through Dependabot. For the engines, a finding in the base image is
+For the exporters, Diun and DbGate, fixes arrive through Dependabot. For the engines, a finding in the base image is
 usually fixed by an upstream rebuild of the same tag, which Diun reports as "has been updated": take it as a
 [rebuild](upgrading.md#a-rebuild-a-patch-or-a-minor-release). A finding in the engine itself is fixed by its next
 minor release. A finding in a component the engines never use from the network (a helper binary in the image, say)

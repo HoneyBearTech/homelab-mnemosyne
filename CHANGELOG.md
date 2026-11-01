@@ -24,6 +24,12 @@ All notable changes to homelab-mnemosyne are documented here. The format follows
   Dependabot.
 - Documentation: installing on Proxmox with ZFS replication and HA, moving each of the homelab's apps over,
   upgrading the engines, and rebuilding from the dumps.
+- DbGate, a web GUI for both engines (`dbgate`, Dependabot-managed): every database's tables, columns, keys,
+  indexes, sizes and ER diagrams. It answers on `127.0.0.1` only (reach it through an SSH tunnel; `DBGATE_PORT`),
+  runs as `PUID`:`PGID` on a read-only root filesystem, holds no password, and logs in as `dbviewer`
+  (`scripts/db.sh viewer pg|mariadb`), which connects from the stack's network only and sees structure, never rows.
+  `db.sh create` grants `dbviewer` each new PostgreSQL database; the smoke test proves it sees a table's columns and
+  can't read the table on both engines ([docs/browsing.md](docs/browsing.md)).
 
 ### Changed
 

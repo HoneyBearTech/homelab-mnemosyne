@@ -11,6 +11,7 @@ APPS = {
     "postgres": ("config:/var/lib/postgresql", "tls:/tls:ro"),
     "mariadb": ("config:/var/lib/mysql",),
     "diun": ("config:/data",),
+    "dbgate": ("config:/data",),
 }
 FROM_CHECKOUT = {
     "postgres": ("./initdb/postgres:/docker-entrypoint-initdb.d:ro",),
@@ -81,6 +82,34 @@ def test_superuser_never_logs_in_over_the_network() -> None:
     assert first_postgres == ["host", "all", "postgres", "all", "reject"]
     assert rules[-1] == ["host", "all", "all", "all", "reject"]
     assert not any(rule[-1] == "trust" for rule in rules if rule[0] != "local")
+
+
+def test_dbviewer_logs_in_from_the_stacks_network_only() -> None:
+    # Its rules come before the apps' (first match wins), or it could log in from DB_CLIENT_SUBNET as well.
+    hba = compose()["services"]["postgres"]["environment"]["PG_HBA"]
+    rules = [line.split() for line in hba.splitlines() if line.strip() and not line.startswith("#")]
+    mine = [i for i, rule in enumerate(rules) if rule[0].startswith("host") and rule[2] == "dbviewer"]
+    apps = next(i for i, rule in enumerate(rules) if "DB_CLIENT_SUBNET" in " ".join(rule))
+    assert [rules[i][3:] for i in mine] == [
+        ["${STACK_SUBNET:?set", "STACK_SUBNET", "in", ".env}", "scram-sha-256"],
+        ["all", "reject"],
+    ]
+    assert mine[-1] < apps
+
+
+def test_dbgate_is_published_on_loopback_only_and_holds_no_password() -> None:
+    dbgate = compose()["services"]["dbgate"]
+    assert all(port.startswith("127.0.0.1:") for port in dbgate["ports"])
+    env = dbgate["environment"]
+    assert not [
+        key
+        for key in env
+        if key.startswith(("PASSWORD_", "LOGIN", "SSH_PASSWORD")) and not key.startswith("PASSWORD_MODE_")
+    ]
+    for conn in env["CONNECTIONS"].split(","):
+        assert env[f"USER_{conn}"] == "dbviewer"
+        assert env[f"PASSWORD_MODE_{conn}"] == "askPassword"
+        assert env[f"READONLY_{conn}"] == "1"
 
 
 def test_mariadb_root_is_local_only() -> None:
