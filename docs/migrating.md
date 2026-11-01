@@ -77,7 +77,14 @@ Prowlarr showed (identical row counts in every table, the app's housekeeping vac
 1. **Settings.** The app reads them from the environment (above) or from its `config.xml` (`PostgresHost`,
    `PostgresPort`, `PostgresUser`, `PostgresPassword`, `PostgresMainDb`, `PostgresLogDb`); `config.xml` needs no
    change to its stack. Keep a copy of the old `config.xml`, and never overwrite that copy if a step is run twice
-   (`cp -n`).
+   (`cp -n`). With the password in it, `config.xml` is a secret: the apps leave it readable by every account on the
+   host (mode 644, or 666), so `chmod 600` it and the copy. The app runs as the file's owner, so it can still read
+   it, and Prowlarr kept the file's mode when it rewrote it. The password also reaches the app's log: at every start
+   it logs its connection string, password included (`*** Migrating Database=…;Password=…`), to its console (Docker's
+   log) and to `logs/*.txt` in its folder, which it leaves readable by every account too. So never print the app's
+   start-up log while you check it (count errors, don't show the lines), and if one is printed or shared, give the
+   login a new password (`scripts/db.sh password pg sonarr`, then the app's `PostgresPassword`, then restart it). A
+   log collector that masks `password=` values keeps it out of the collected copy.
 2. **First start.** Stop the app cleanly, so its `.db` file has no `-wal` beside it, copy it here, and start the app
    once on the empty databases: it creates its tables (both databases at its current migration). Stop it again.
 3. **Empty every table** in the main database, not only the ones the guide lists: the first start fills some
@@ -96,8 +103,13 @@ Prowlarr showed (identical row counts in every table, the app's housekeeping vac
 
    ```sh
    docker run --rm --network host --env-file pg.env -v "$PWD/sonarr.db:/app.db:ro" ghcr.io/roxedus/pgloader \
-     --with "quote identifiers" --with "data only" /app.db "postgresql://sonarr@<this server>/sonarr_main?sslmode=disable"
+     --with "quote identifiers" --with "data only" --with "prefetch rows = 100" --with "batch size = 1MB" \
+     /app.db "postgresql://sonarr@<this server>/sonarr_main?sslmode=disable"
    ```
+
+   The two batch options keep pgloader's memory small. Without them a large database (Sonarr's, 700 MB and 470,000
+   rows) exhausts its heap partway through ("Heap exhausted, game over"), leaving some tables loaded and the rest
+   empty; with them the same copy took 21 seconds. If it does fail, empty every table again (step 3) and rerun.
 
    pgloader resets every sequence itself, so the guide's `setval` statements aren't needed; check that none is
    behind its table's highest id, and compare each table's row count with the `.db` file before starting the app.
