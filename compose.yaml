@@ -116,15 +116,17 @@ services:
       # Read by docker-entrypoint-initdb.d/10-metrics.sh on the first start only.
       METRICS_PASSWORD_FILE: /run/secrets/pg_metrics_password
       # First match wins. The superuser never logs in from outside the container, with or without TLS; the exporter's
-      # role only from this stack's network (STACK_SUBNET); every other role from the apps' hosts (DB_CLIENT_SUBNET),
-      # with a password. Each role reaches only the databases it was granted CONNECT on (scripts/db.sh revokes it
-      # from PUBLIC). Everything else is refused.
+      # role and DbGate's (dbviewer) only from this stack's network (STACK_SUBNET); every other role from the apps'
+      # hosts (DB_CLIENT_SUBNET), with a password. Each role reaches only the databases it was granted CONNECT on
+      # (scripts/db.sh revokes it from PUBLIC). Everything else is refused.
       PG_HBA: |
         # TYPE  DATABASE  USER      ADDRESS                                                 METHOD
         local   all       all                                                               trust
         host    all       postgres  all                                                     reject
         host    postgres  metrics   ${STACK_SUBNET:?set STACK_SUBNET in .env}           scram-sha-256
         host    all       metrics   all                                                     reject
+        host    all       dbviewer  ${STACK_SUBNET:?set STACK_SUBNET in .env}           scram-sha-256
+        host    all       dbviewer  all                                                     reject
         host    all       all       ${DB_CLIENT_SUBNET:?set DB_CLIENT_SUBNET in .env}       scram-sha-256
         host    all       all       all                                                     reject
     secrets:
@@ -230,6 +232,58 @@ services:
       - mysqld_exporter_cnf
     ports:
       - "${MYSQLD_EXPORTER_PORT:?set MYSQLD_EXPORTER_PORT in .env}:9104"
+
+  # --- Browsing (Dependabot-managed) -------------------------------------------------------------------------------
+
+  # DbGate, a web GUI for both engines: databases, tables, columns, keys, indexes and diagrams. It answers on
+  # 127.0.0.1 only, so it is reached through an SSH tunnel to this host (docs/browsing.md), and it logs in as
+  # dbviewer (`scripts/db.sh viewer`), which sees every database's structure and no table's rows. DbGate can't read a
+  # password from a file, so it holds none: it asks for dbviewer's each time it connects. Its own state (saved
+  # scripts, settings) is in CONFIG_ROOT/dbgate/config.
+  dbgate:
+    <<: *hardened
+    image: dbgate/dbgate:7.3.3@sha256:c9b3c97af5cde488e2e722e8d96bbd80ded3ca7013deb2e14c8f095ae818e6d3
+    container_name: dbgate
+    user: ${PUID:?set PUID in .env}:${PGID:?set PGID in .env}
+    read_only: true
+    tmpfs:
+      - /tmp
+    restart: unless-stopped
+    # The image's start script adds a host name to /etc/hosts as root first; this stack needs none of it.
+    working_dir: /home/dbgate-docker
+    entrypoint: ["node", "bundle.js", "--listen-api"]
+    healthcheck:
+      <<: *healthcheck
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+    environment:
+      TZ: ${TZ:?set TZ in .env}
+      # Its state goes in $$HOME/.dbgate.
+      HOME: /data
+      # It sends none without an analytics key either; this says so.
+      USAGE_ANALYTICS: "false"
+      CONNECTIONS: pg,mariadb
+      LABEL_pg: PostgreSQL
+      ENGINE_pg: postgres@dbgate-plugin-postgres
+      SERVER_pg: postgres
+      PORT_pg: "5432"
+      USER_pg: dbviewer
+      PASSWORD_MODE_pg: askPassword
+      READONLY_pg: "1"
+      LABEL_mariadb: MariaDB
+      ENGINE_mariadb: mariadb@dbgate-plugin-mysql
+      SERVER_mariadb: mariadb
+      PORT_mariadb: "3306"
+      USER_mariadb: dbviewer
+      PASSWORD_MODE_mariadb: askPassword
+      READONLY_mariadb: "1"
+    ports:
+      - "127.0.0.1:${DBGATE_PORT:?set DBGATE_PORT in .env}:3000"
+    volumes:
+      - ${CONFIG_ROOT:?set CONFIG_ROOT in .env}/dbgate/config:/data
 
   # --- Upgrade watch (Dependabot-managed) --------------------------------------------------------------------------
 

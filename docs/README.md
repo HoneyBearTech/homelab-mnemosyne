@@ -6,6 +6,7 @@
 | [installing.md](installing.md) | The VM, ZFS replication and HA, the stack, TLS, backups, Argus, the drills |
 | [migrating.md](migrating.md) | Moving each of the homelab's apps onto the server, and which stay where they are |
 | [upgrading.md](upgrading.md) | What Diun's Discord messages mean, and how each kind of engine upgrade is done |
+| [browsing.md](browsing.md) | Looking at the databases' structure in a browser (DbGate) |
 | [interfaces.md](interfaces.md) | Settings, ports, files and scripts |
 | [architecture.md](architecture.md) | How it fits together, and why |
 | [security.md](security.md) | Threats, boundaries, who can log in where, secrets |

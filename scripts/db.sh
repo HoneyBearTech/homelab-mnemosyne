@@ -6,14 +6,17 @@
 #   scripts/db.sh create pg LOGIN DB...       a PostgreSQL login role owning these databases (new ones)
 #   scripts/db.sh create mariadb LOGIN DB...  a MariaDB user with every right on these databases (new ones)
 #   scripts/db.sh password pg|mariadb LOGIN   give an existing login a new password
+#   scripts/db.sh viewer pg|mariadb           the dbviewer login DbGate uses: every database's structure, no rows
 #   scripts/db.sh list                        every database on both engines, its owner and size
 #
 # A new login's password is printed once, on stdout, and kept nowhere here: put it straight into the app's settings
-# on its own host. Creating databases for a login that already exists leaves its password alone.
+# on its own host (dbviewer's: your password manager; DbGate asks for it). Creating databases for a login that
+# already exists leaves its password alone, and so does running `viewer` again (it only catches up its rights).
 #
 # Names are lowercase letters, digits and underscores, starting with a letter, at most 63 characters (PostgreSQL's
 # limit; MariaDB's for users is 80): `sonarr_main`, not `sonarr-main`. Each PostgreSQL database may be connected to
-# only by its owner (CONNECT is revoked from PUBLIC); each MariaDB user may log in only from DB_CLIENT_SUBNET.
+# only by its owner (CONNECT is revoked from PUBLIC) and dbviewer; each MariaDB user may log in only from
+# DB_CLIENT_SUBNET.
 #
 # The stack's settings come from .env (COMPOSE_ENV_FILES or the environment override it, as in the smoke test).
 set -euo pipefail
@@ -25,10 +28,10 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 name_re='^[a-z][a-z0-9_]{0,62}$'
 # The engines' own accounts and databases, and the stack's: never handed to an app.
 reserved=" postgres template0 template1 metrics pg_monitor public mysql sys information_schema performance_schema
-  root exporter healthcheck mariadb mariadb_sys "
+  root exporter healthcheck mariadb mariadb_sys dbviewer "
 
 usage() {
-  sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' >&2
+  sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//' >&2
   exit 2
 }
 
@@ -87,7 +90,7 @@ init() {
 
   echo "Folders under $config_root"
   for dir in postgres/config postgres/tls postgres/secrets mariadb/config mariadb/secrets \
-    mysqld-exporter/secrets diun/config diun/secrets; do
+    mysqld-exporter/secrets diun/config diun/secrets dbgate/config; do
     mkdir -p "$config_root/$dir"
     case $dir in */secrets | */tls) chmod 700 "$config_root/$dir" ;; esac
   done
@@ -131,7 +134,7 @@ init() {
   fi
 
   if [ "$(id -u)" = 0 ]; then
-    for dir in postgres mariadb mysqld-exporter diun; do chown -R "$puid:$pgid" "$config_root/$dir"; done
+    for dir in postgres mariadb mysqld-exporter diun dbgate; do chown -R "$puid:$pgid" "$config_root/$dir"; done
   fi
   echo "Done. Next: docker compose up -d --wait"
 }
@@ -143,7 +146,7 @@ init() {
 pg_count() { pg_sql -tA -d postgres <<<"$1"; }
 
 pg_create() {
-  local login=$1 db pw="" sql
+  local login=$1 db pw="" sql viewer
   shift
   local n
   for db in "$@"; do
@@ -154,6 +157,7 @@ pg_create() {
     fi
   done
   sql=""
+  viewer=$(pg_count "SELECT count(*) FROM pg_roles WHERE rolname = 'dbviewer';")
   n=$(pg_count "SELECT count(*) FROM pg_roles WHERE rolname = '$login';")
   if [ "$n" = 0 ]; then
     pw=$(new_password)
@@ -164,6 +168,7 @@ pg_create() {
     sql+="CREATE DATABASE \"$db\" OWNER \"$login\";"$'\n'
     sql+="REVOKE CONNECT, TEMPORARY ON DATABASE \"$db\" FROM PUBLIC;"$'\n'
     sql+="GRANT CONNECT, TEMPORARY ON DATABASE \"$db\" TO \"$login\";"$'\n'
+    if [ "$viewer" != 0 ]; then sql+="GRANT CONNECT ON DATABASE \"$db\" TO dbviewer;"$'\n'; fi
   done
   pg_sql -d postgres <<<"$sql"
   report pg "$login" "$pw" "$@"
@@ -220,7 +225,11 @@ password() {
       pg_sql -d postgres <<<"ALTER ROLE \"$login\" PASSWORD '$pw';"
       ;;
     mariadb)
-      host=$(netmask_form "$(setting DB_CLIENT_SUBNET)")
+      if [ "$login" = dbviewer ]; then
+        host=$(netmask_form "$(setting STACK_SUBNET)")
+      else
+        host=$(netmask_form "$(setting DB_CLIENT_SUBNET)")
+      fi
       n=$(maria_sql -N -B <<<"SELECT COUNT(*) FROM mysql.global_priv WHERE User = '$login';")
       if [ "$n" = 0 ]; then
         echo "error: there is no MariaDB user $login" >&2
@@ -231,6 +240,52 @@ password() {
   esac
   echo "New password for $login on $engine, shown this once; the app needs it before its next connection:" >&2
   printf '%s\n' "$pw"
+}
+
+# --- viewer -------------------------------------------------------------------------------------------------------
+
+# dbviewer is DbGate's login (compose.yaml): it logs in from this stack's network only and sees the structure of
+# every database (tables, columns, keys, indexes, sizes), never a row. On PostgreSQL it holds CONNECT on every
+# database and nothing else: DbGate reads the structure from pg_catalog, which any login may read, and a table's
+# rows need privileges it hasn't got. No pg_monitor either: other sessions' query text can carry data. Run again
+# after a restore to catch up; `create` grants it CONNECT on each new database itself.
+pg_viewer() {
+  local pw="" sql="" db n
+  n=$(pg_count "SELECT count(*) FROM pg_roles WHERE rolname = 'dbviewer';")
+  if [ "$n" = 0 ]; then
+    pw=$(new_password)
+    sql+="CREATE ROLE dbviewer LOGIN PASSWORD '$pw' CONNECTION LIMIT 5;"$'\n'
+  fi
+  for db in $(pg_count "SELECT datname FROM pg_database WHERE NOT datistemplate ORDER BY 1;"); do
+    sql+="GRANT CONNECT ON DATABASE \"$db\" TO dbviewer;"$'\n'
+  done
+  pg_sql -d postgres <<<"$sql"
+  viewer_report pg "$pw"
+}
+
+# MariaDB has no right to see a table's structure alone: information_schema (which DbGate reads) lists a table to a
+# user holding some privilege on it. REFERENCES is that privilege without reading anything (it would let a user
+# who can create tables point a foreign key at it; dbviewer can't create any), and SHOW VIEW shows views' definitions.
+maria_viewer() {
+  local pw="" sql="" host n
+  host=$(netmask_form "$(setting STACK_SUBNET)")
+  n=$(maria_sql -N -B <<<"SELECT COUNT(*) FROM mysql.global_priv WHERE User = 'dbviewer';")
+  if [ "$n" = 0 ]; then
+    pw=$(new_password)
+    sql+="CREATE USER 'dbviewer'@'$host' IDENTIFIED BY '$pw' WITH MAX_USER_CONNECTIONS 5;"$'\n'
+  fi
+  sql+="GRANT REFERENCES, SHOW VIEW ON *.* TO 'dbviewer'@'$host';"$'\n'
+  maria_sql <<<"$sql"
+  viewer_report mariadb "$pw"
+}
+
+viewer_report() {
+  if [ -n "$2" ]; then
+    echo "New login dbviewer on $1. Its password, shown this once; keep it in your password manager (DbGate asks):" >&2
+    printf '%s\n' "$2"
+  else
+    echo "dbviewer already existed on $1; its rights are caught up and its password is unchanged." >&2
+  fi
 }
 
 list() {
@@ -279,8 +334,13 @@ main() {
     password)
       [ $# -eq 3 ] || usage
       engine=$(engine_arg "$2")
-      check_name "$3"
+      if [ "$3" != dbviewer ]; then check_name "$3"; fi
       password "$engine" "$3"
+      ;;
+    viewer)
+      [ $# -eq 2 ] || usage
+      engine=$(engine_arg "$2")
+      if [ "$engine" = pg ]; then pg_viewer; else maria_viewer; fi
       ;;
     list)
       [ $# -eq 1 ] || usage

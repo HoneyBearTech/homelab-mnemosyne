@@ -1,7 +1,8 @@
 version: 2
-# Patch, minor and major updates of the exporters, Diun, the check tools and the Actions are auto-merged once every
-# required check passes (workflows/dependabot-auto-merge.yml), as in the other homelab stacks. A merge deploys: the
-# server's pull agent applies main within minutes, and Compose recreates only the service whose image changed.
+# Patch, minor and major updates of the exporters, Diun, DbGate, the check tools and the Actions are auto-merged
+# once every required check passes (workflows/dependabot-auto-merge.yml), as in the other homelab stacks. A merge
+# deploys: the server's pull agent applies main within minutes, and Compose recreates only the service whose image
+# changed.
 #
 # The two database engines are not Dependabot's (owner 2026-10-26): every app in the homelab depends on them, and a
 # new engine version, even a patch, restarts every app's database. Diun alerts on Discord instead

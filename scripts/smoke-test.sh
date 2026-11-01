@@ -7,6 +7,8 @@
 #     network, even with the right password;
 #   - creating more databases for an existing login keeps its password, and `db.sh password` replaces it;
 #   - both exporters are logged in to their engine (pg_up 1, mysql_up 1);
+#   - DbGate's dbviewer sees a table's columns on both engines and can't read its rows, reaches a database created
+#     after it, and keeps its password when `db.sh viewer` runs again; DbGate's page answers;
 #   - scripts/backup.sh dumps everything without stopping it, and scripts/restore.sh brings one database back
 #     (refusing to overwrite without --replace);
 #   - scripts/scheduled-backup.sh copies a backup whole to a stand-in backup server (a local directory) and, when age
@@ -132,6 +134,32 @@ compose exec -T postgres-exporter wget -q -O - http://127.0.0.1:9187/metrics | g
 compose exec -T mysqld-exporter wget -q -O - http://127.0.0.1:9104/metrics | grep -x 'mysql_up 1' >/dev/null ||
   fail "mysqld-exporter isn't logged in"
 
+echo "== dbviewer: the structure, never a row"
+vpw=$("$root/scripts/db.sh" viewer pg)
+[[ $vpw =~ ^[0-9a-f]{48}$ ]] || fail "db.sh viewer didn't print a password"
+viewer_pg() { pg_client "$vpw" "host=postgres dbname=$1 user=dbviewer" "${@:2}"; }
+columns="SELECT count(*) FROM pg_attribute WHERE attrelid = 'public.t'::regclass AND attnum > 0"
+[ "$(viewer_pg smoke_main -c "$columns")" = 1 ] || fail "dbviewer doesn't see the table's columns"
+if viewer_pg smoke_main -c 'SELECT x FROM t' 2>/dev/null; then fail "dbviewer read a row"; fi
+if viewer_pg smoke_main -c 'CREATE TABLE u (x int)' 2>/dev/null; then fail "dbviewer created a table"; fi
+viewer_pg postgres -c 'SELECT 1' >/dev/null || fail "dbviewer can't open the postgres database (the list of databases)"
+[ -z "$("$root/scripts/db.sh" viewer pg)" ] || fail "running db.sh viewer again printed a new password"
+"$root/scripts/db.sh" create pg late late_main >/dev/null
+viewer_pg late_main -c 'SELECT 1' >/dev/null || fail "dbviewer didn't get a database created after it"
+mvpw=$("$root/scripts/db.sh" viewer mariadb)
+[[ $mvpw =~ ^[0-9a-f]{48}$ ]] || fail "db.sh viewer mariadb didn't print a password"
+columns="SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = 'smokem_main' AND TABLE_NAME = 't'"
+[ "$(maria_client "$mvpw" -u dbviewer -N -B -e "$columns")" = 1 ] ||
+  fail "dbviewer doesn't see the MariaDB table's columns"
+if maria_client "$mvpw" -u dbviewer -e 'SELECT x FROM t' smokem_main 2>/dev/null; then
+  fail "dbviewer read a MariaDB row"
+fi
+if maria_client "$mvpw" -u dbviewer -e 'CREATE TABLE u (x int)' smokem_main 2>/dev/null; then
+  fail "dbviewer created a MariaDB table"
+fi
+page="fetch('http://127.0.0.1:3000/').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+compose exec -T dbgate node -e "$page" || fail "DbGate's page doesn't answer"
+
 echo "== Backup and restore"
 "$root/scripts/backup.sh" "$work/backup"
 for f in VERSION SHA256SUMS postgres/globals.sql postgres/smoke_main.dump postgres/smoke_log.dump \
@@ -215,6 +243,8 @@ if pg_client "$pw" "host=postgres dbname=smoke_main user=smoke sslmode=require" 
 fi
 mnew=$("$root/scripts/db.sh" password mariadb smokem)
 maria_client "$mnew" -u smokem -e 'SELECT 1' smokem_main >/dev/null || fail "the new MariaDB password doesn't work"
+vnew=$("$root/scripts/db.sh" password mariadb dbviewer)
+maria_client "$vnew" -u dbviewer -e 'SELECT 1' >/dev/null || fail "dbviewer's new MariaDB password doesn't work"
 
 echo "== Every service still healthy"
 compose up -d --wait --wait-timeout 60 >/dev/null

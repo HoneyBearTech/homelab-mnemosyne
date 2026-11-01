@@ -14,11 +14,12 @@ Every setting is required (`compose.yaml` refuses to start without it) and has a
 | `PUID`, `PGID` | `1000` | The user and group every service runs as and that owns its folders under `CONFIG_ROOT`; `scripts/db.sh init` must run as this user (or as root) |
 | `CONFIG_ROOT` | `/srv/config` | Host directory with one folder per service (below); on the VM's data disk, never inside `/var/lib/docker/volumes` |
 | `DB_CLIENT_SUBNET` | `192.0.2.0/24` | The range the apps connect from. PostgreSQL admits app logins from here only; MariaDB users are created for it |
-| `STACK_SUBNET` | `172.30.0.0/24` | This stack's Docker network, fixed so the exporters' accounts can be limited to it |
+| `STACK_SUBNET` | `172.30.0.0/24` | This stack's Docker network, fixed so the exporters' and DbGate's (`dbviewer`) accounts can be limited to it |
 | `PG_PORT` | `5432` | PostgreSQL's published port |
 | `MARIADB_PORT` | `3306` | MariaDB's published port |
 | `PG_EXPORTER_PORT` | `9187` | postgres_exporter's metrics port, for Argus' Prometheus |
 | `MYSQLD_EXPORTER_PORT` | `9104` | mysqld_exporter's metrics port, for Argus' Prometheus |
+| `DBGATE_PORT` | `3000` | DbGate's port, published on `127.0.0.1` only (reach it through an SSH tunnel, [browsing.md](browsing.md)) |
 | `PG_MAX_CONNECTIONS` | `300` | PostgreSQL `max_connections`: every app's pool together, plus headroom |
 | `PG_SHARED_BUFFERS` | `2GB` | PostgreSQL `shared_buffers` (about a quarter of the VM's memory) |
 | `PG_EFFECTIVE_CACHE_SIZE` | `5GB` | PostgreSQL `effective_cache_size` (what the planner may assume the OS caches) |
@@ -42,6 +43,7 @@ on the host).
 | 3306 | MariaDB | apps on `DB_CLIENT_SUBNET`, each with its own user | MySQL protocol; TLS offered |
 | 9187 | postgres_exporter | Argus' Prometheus | HTTP `/metrics` |
 | 9104 | mysqld_exporter | Argus' Prometheus | HTTP `/metrics` |
+| 3000 | DbGate | you, through an SSH tunnel: published on `127.0.0.1` only | HTTP (the tunnel encrypts it) |
 
 Diun has no port: it only calls out (the registries, Discord).
 
@@ -70,6 +72,7 @@ Per-app settings for the homelab's apps are in [migrating.md](migrating.md).
 | `mysqld-exporter/secrets/my.cnf` | the exporter's login | `scripts/db.sh init` |
 | `diun/config/diun.db` | the tags and digests Diun has seen | Diun |
 | `diun/secrets/discord_webhook` | the Discord channel's webhook URL | `scripts/db.sh init` (asks for it) |
+| `dbgate/config/.dbgate/` | DbGate's own state: saved scripts, settings, its logs (no passwords) | DbGate |
 
 Every `secrets/` and `tls/` folder is 0700 and every file in it 0600, owned by `PUID`:`PGID`.
 
@@ -80,6 +83,7 @@ Every `secrets/` and `tls/` folder is 0700 and every file in it 0600, owned by `
 | `scripts/db.sh init [--tls-name NAME]...` | Creates the folders, passwords, exporter login and certificate; asks for the Discord webhook. Never overwrites |
 | `scripts/db.sh create pg\|mariadb LOGIN DB...` | A login (if new; its password printed once) and new databases it owns |
 | `scripts/db.sh password pg\|mariadb LOGIN` | A new password for a login, printed once |
+| `scripts/db.sh viewer pg\|mariadb` | DbGate's `dbviewer` login (if new; its password printed once), caught up on every database: structure only, no rows |
 | `scripts/db.sh list` | Every database on both engines, its owner and size |
 | `scripts/backup.sh [DIR]` | Dumps every database and the accounts, without stopping anything |
 | `scripts/restore.sh DIR pg\|mariadb DB [--replace]` | Restores one database from a dump |
