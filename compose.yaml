@@ -243,7 +243,7 @@ services:
   # (saved scripts, settings) is in CONFIG_ROOT/dbgate/config.
   dbgate:
     <<: *hardened
-    image: dbgate/dbgate:7.3.3@sha256:c9b3c97af5cde488e2e722e8d96bbd80ded3ca7013deb2e14c8f095ae818e6d3
+    image: dbgate/dbgate:7.3.4@sha256:ac3df6116e3bb15ea0cb7d1fc373c2f5378f42ee5327ff2c6e830e0fc8e86039
     container_name: dbgate
     user: ${PUID:?set PUID in .env}:${PGID:?set PGID in .env}
     read_only: true
