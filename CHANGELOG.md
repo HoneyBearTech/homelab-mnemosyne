@@ -8,6 +8,8 @@ All notable changes to homelab-mnemosyne are documented here. The format follows
 
 ### Added
 
+- `docs/assurance-case.md` (threat model, trust boundaries, secure design principles, common weaknesses), an
+  "Actors and actions" section in the architecture, and a roadmap that looks a year ahead.
 - The stack: PostgreSQL 18.6 and MariaDB 11.8.9 (LTS), pinned by digest; postgres_exporter and mysqld_exporter for
   Argus; Diun watching both engines and posting new releases and rebuilds to Discord.
 - `scripts/db.sh`: the stack's secrets and certificate (`init`), per-app logins and databases (`create`), new

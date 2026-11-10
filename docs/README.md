@@ -10,6 +10,7 @@
 | [interfaces.md](interfaces.md) | Settings, ports, files and scripts |
 | [architecture.md](architecture.md) | How it fits together, and why |
 | [security.md](security.md) | Threats, boundaries, who can log in where, secrets |
+| [assurance-case.md](assurance-case.md) | Why the security requirements are met: threat model, design principles, common weaknesses |
 | [rebuilding.md](rebuilding.md) | Starting over from the nightly dumps |
 | [dependencies.md](dependencies.md) | What is pinned, how it is updated, vulnerabilities |
 | [verifying-releases.md](verifying-releases.md) | Checking a release's signatures |

@@ -32,6 +32,20 @@ DbGate by address. The engines publish their ports on the VM's address for the a
 for Argus; DbGate publishes its port on `127.0.0.1` for an SSH tunnel, or on the VM's address for a reverse proxy
 that a `DOCKER-USER` rule admits alone (`DBGATE_BIND_ADDRESS`).
 
+## Actors and actions
+
+| Actor | What it does | Through |
+| --- | --- | --- |
+| An app on another server | Reads and writes its own databases | PostgreSQL or MariaDB over the network, as its own login, from `DB_CLIENT_SUBNET` |
+| The operator | Creates logins and databases, changes passwords, takes and restores dumps | `scripts/db.sh`, `backup.sh` and `restore.sh` on the VM, which talk to the engines inside their containers (never over the network) |
+| The operator | Looks at the databases' structure | DbGate, as `dbviewer`, through an SSH tunnel or a reverse proxy |
+| Argus (Prometheus) | Scrapes metrics | The two exporters' ports |
+| Diun | Compares the pinned engine tags with the registries and reports changes | Registries, then the Discord webhook |
+| The scheduled backup | Dumps every database, then copies the dumps off the host | `scripts/scheduled-backup.sh` from a systemd timer; rsync over SSH to the backup server |
+| The pull agent | Fast-forwards the checkout to `main` and runs `docker compose up -d` | The host's own agent; nothing connects in to deploy |
+| Dependabot | Proposes updates to the exporters, Diun, DbGate, the tools and the Actions (never the engines) | Pull requests that CI checks, then auto-merged |
+| The maintainer | Reviews and merges changes, makes engine upgrades and releases | Pull requests on `main`; signed tags |
+
 ## Data flow
 
 - **Apps → engines.** Each app connects with its own login from its own host (`DB_CLIENT_SUBNET`), over TLS when
