@@ -1,0 +1,70 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "timezone": "America/Chicago",
+  "schedule": [
+    "before 6am on monday"
+  ],
+  "labels": [
+    "dependencies"
+  ],
+  "assignees": [
+    "HoneyBearTech"
+  ],
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "labels": [
+      "security"
+    ]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Tool images pinned by tag and digest in the workflows' docker run commands",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/(ci|scan)\\.yml$/"
+      ],
+      "matchStrings": [
+        "(?m)^[ \\t]*(?:run:[ \\t]*)?(?:docker run\\b[^\\n]*?[ \\t]+)?(?<depName>rhysd/actionlint|ghcr\\.io/gitleaks/gitleaks|aquasec/trivy):(?<currentValue>[A-Za-z0-9._-]+)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?(?:\\s|$)"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    }
+  ],
+  "packageRules": [
+    {
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "GitHub Actions minor and patch updates"
+    },
+    {
+      "description": "init, analyze and upload-sarif must share one version",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "github/codeql-action",
+        "github/codeql-action/**"
+      ],
+      "groupName": "codeql"
+    },
+    {
+      "description": "The database engines are upgraded by hand after Diun's alert (docs/upgrading.md): no version, digest or pin updates. scripts/check_watches.py fails CI if an engine pinned in compose.yaml is missing here",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "postgres",
+        "mariadb"
+      ],
+      "enabled": false
+    }
+  ]
+}

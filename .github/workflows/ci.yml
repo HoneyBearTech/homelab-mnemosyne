@@ -100,7 +100,7 @@ jobs:
         run: python scripts/check_watches.py
 
   smoke:
-    # A required check on main, like "Checks + tests", so an image that doesn't start can't be auto-merged.
+    # A required check on main, like "Checks + tests", so an image that doesn't start can't be merged.
     name: Stack smoke test
     # Amd64, like the server, so the images are tested for the platform they run on.
     runs-on: ubuntu-24.04
@@ -111,7 +111,7 @@ jobs:
           persist-credentials: false
 
       # Every image the smoke test runs is pulled while logged in to Docker Hub (see the "Checks + tests" job),
-      # and the login is gone before any of them starts: an image under test, such as a Dependabot update, mustn't
+      # and the login is gone before any of them starts: an image under test, such as a Renovate update, mustn't
       # be able to read the token.
       - name: Pull the stack's images
         env:

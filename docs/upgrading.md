@@ -2,11 +2,11 @@
 
 Two kinds of update reach this stack, and they are handled differently.
 
-- **The exporters, Diun, the check tools and the Actions** are Dependabot's, as in every homelab stack: a pull
-  request, the required checks, auto-merge, and the pull agent deploys it. Compose recreates only the service whose
-  image changed, so the engines don't restart.
+- **The exporters, Diun, DbGate, the check tools, the Actions and the CI images** are Renovate's: a pull
+  request, the required checks, the maintainer's merge, and the pull agent deploys it. Compose recreates only the
+  service whose image changed, so the engines don't restart.
 - **The two engines** (PostgreSQL, MariaDB) are pinned by hand. Every app in the homelab depends on them, and
-  restarting either one, even for a patch, drops every app's connections. Dependabot ignores them;
+  restarting either one, even for a patch, drops every app's connections. Renovate ignores them;
   [Diun](../diun/images.yml) posts to Discord instead, and an upgrade is a pull request you make and merge at a
   quiet time. `scripts/check_watches.py` fails CI if the pin and the watch disagree.
 

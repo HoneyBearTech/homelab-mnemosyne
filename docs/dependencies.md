@@ -6,12 +6,33 @@ What the stack runs, how each piece is pinned and updated, and how vulnerabiliti
 | --- | --- | --- | --- |
 | PostgreSQL (`postgres`) | `compose.yaml` | tag and digest | hand, after Diun's alert ([upgrading.md](upgrading.md)) |
 | MariaDB (`mariadb`) | `compose.yaml` | tag and digest | hand, after Diun's alert |
-| postgres_exporter, mysqld_exporter, Diun, DbGate | `compose.yaml` | tag and digest | Dependabot, auto-merged once the checks pass |
-| The check and test tools | `requirements-dev.txt` | version and hash | Dependabot |
-| GitHub Actions, CI images | `.github/workflows/`, `.gitlab-ci.yml` | commit SHA / digest | Dependabot (Actions); by hand (CI images) |
+| postgres_exporter, mysqld_exporter, Diun, DbGate | `compose.yaml` | tag and digest | Renovate, merged by hand once the checks pass |
+| The check and test tools | `requirements-dev.txt` | version and hash | Renovate |
+| GitHub Actions, CI images | `.github/workflows/`, `.gitlab-ci.yml` | commit SHA / digest | Renovate |
 
 All are open source: PostgreSQL (PostgreSQL License), MariaDB (GPL-2.0), the exporters (Apache-2.0), Diun
 (MIT), DbGate's community edition (GPL-3.0).
+
+## Tracking dependencies
+
+**Renovate** ([`renovate.json`](../renovate.json)) checks weekly, before 6am on Monday in the `America/Chicago`
+timezone, and opens pull requests labelled `dependencies` and assigned to the maintainer. Automerge is off: each
+one is merged by hand once the required checks pass, and a merge deploys within minutes
+([upgrading.md](upgrading.md)).
+
+| Files and declarations | Renovate manager | Notes |
+| --- | --- | --- |
+| `compose.yaml` `image:` | Docker Compose | Tag and digest move together; a rebuild of the same tag arrives as a digest update. `postgres` and `mariadb` are disabled |
+| `requirements-dev.txt` | pip_requirements | Version and hashes of each pinned tool |
+| `.github/workflows/*.yml` `uses:` | GitHub Actions | Commit SHA and version comment; minor and patch updates share one pull request, and `github/codeql-action` (init, analyze, upload-sarif) always moves as one |
+| `.gitlab-ci.yml` `image:` and `image.name:` | GitLab CI | Tag and digest |
+| actionlint, gitleaks and Trivy in the `docker run` commands of `ci.yml` and `scan.yml` | Regex custom manager | Tag and digest; only these three images are matched, so a new tool image must be added to the pattern |
+
+The two engines are never proposed: a `packageRules` entry disables `postgres` and `mariadb` for every update type,
+digest updates included, and `scripts/check_watches.py` fails CI if an engine pinned in `compose.yaml` is missing
+from it. Renovate regenerates one tool's hashes in `requirements-dev.txt`, not the whole file: when a tool needs a
+new dependency of its own, regenerate the file with the `pip-compile` command in its first line. GitHub's security
+alerts stay on; a pull request that fixes one is labelled `security`.
 
 ## Choosing an engine version
 
@@ -24,7 +45,7 @@ All are open source: PostgreSQL (PostgreSQL License), MariaDB (GPL-2.0), the exp
 ## Vulnerabilities
 
 The weekly scan (`.github/workflows/scan.yml`) scans every pinned image and posts the findings to code scanning.
-For the exporters, Diun and DbGate, fixes arrive through Dependabot. For the engines, a finding in the base image is
+For the exporters, Diun and DbGate, fixes arrive through Renovate. For the engines, a finding in the base image is
 usually fixed by an upstream rebuild of the same tag, which Diun reports as "has been updated": take it as a
 [rebuild](upgrading.md#a-rebuild-a-patch-or-a-minor-release). A finding in the engine itself is fixed by its next
 minor release. A finding in a component the engines never use from the network (a helper binary in the image, say)
@@ -44,8 +65,8 @@ the fix. None was dismissed.
 | --- | --- | --- | --- |
 | PostgreSQL `18.6-trixie` | 30 (1) | **Not reachable**, except zlib. 26 are the Go standard library in `gosu` 1.24.6, which the entrypoint runs only when the container starts as root, to drop to the `postgres` user; this stack runs it as `PUID`:`PGID`, so `gosu` never runs. 2 are zlib (CVE-2026-85091 and CVE-2026-76844): only the operator's own dumps pass through it, never data from the network. 2 are `apt`, which nothing runs | **Wait for upstream.** `gosu` 1.20 (2026-10-25) is out; the image still ships 1.19. The tag has been rebuilt since the pin; the rebuild closes the `apt` findings only, so it isn't worth an engine restart by itself ([upgrading.md](upgrading.md#a-rebuild-a-patch-or-a-minor-release)) |
 | MariaDB `11.8.9-noble` | 28 (1) | **Not reachable.** 26 are the same `gosu` (it runs `mariadbd` as `mysql` only when started as root, which this stack never does); 2 are `apt` and `libapt-pkg`, which nothing runs | **Wait for upstream.** The tag has been rebuilt since the pin; the rebuild closes none of them |
-| Diun `4.33.1` | 33 (3) | **Not reachable.** Diun is configured with the file provider and the Discord notifier only. The 3 critical and 7 high findings are `amqp091-go`, the RabbitMQ notifier's client, which isn't configured; `x/crypto/ssh` (10), `x/mod/sumdb` (2) and `grpc` (3) belong to features this configuration never uses. The remaining `x/net` and `x/text` findings (8) are in the HTTP client, which only talks to the registries and Discord: a hostile response could at most make it fail a check, and it has no listening port | **Wait for upstream.** 4.33.1 is the newest release (2026-10-24); Dependabot proposes the next |
-| postgres_exporter `v0.20.1` | 19 | **Reachable from the stack's network, as denial of service only.** Go 1.26.4's standard library and `x/net` in the process that serves `/metrics` on the servers' VLAN (unauthenticated, like the other exporters). Nothing it serves is data, and the unit restarts by itself | **Wait for upstream.** The newest release (2026-07-08) predates the fixes; Dependabot proposes the next |
+| Diun `4.33.1` | 33 (3) | **Not reachable.** Diun is configured with the file provider and the Discord notifier only. The 3 critical and 7 high findings are `amqp091-go`, the RabbitMQ notifier's client, which isn't configured; `x/crypto/ssh` (10), `x/mod/sumdb` (2) and `grpc` (3) belong to features this configuration never uses. The remaining `x/net` and `x/text` findings (8) are in the HTTP client, which only talks to the registries and Discord: a hostile response could at most make it fail a check, and it has no listening port | **Wait for upstream.** 4.33.1 is the newest release (2026-10-24); Renovate proposes the next |
+| postgres_exporter `v0.20.1` | 19 | **Reachable from the stack's network, as denial of service only.** Go 1.26.4's standard library and `x/net` in the process that serves `/metrics` on the servers' VLAN (unauthenticated, like the other exporters). Nothing it serves is data, and the unit restarts by itself | **Wait for upstream.** The newest release (2026-07-08) predates the fixes; Renovate proposes the next |
 | mysqld_exporter `v0.21.0` | 1 | The same kind: `x/net/html` (CVE-2026-78661); a library the exporter links; it serves metrics only and fetches no web pages | **Wait for upstream** |
 | DbGate `7.3.4` | 12 | **Not reachable.** 10 are packages inside npm's own `node_modules` (`brace-expansion`, `pacote`, `picomatch`, `sigstore`, `ip-address`): npm is never run, since the container starts `node` on a read-only filesystem. 2 are `apt` and `libapt-pkg`, which nothing runs | **Wait for upstream** |
 

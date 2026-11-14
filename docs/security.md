@@ -24,7 +24,7 @@ its boundaries are drawn tighter than a single app's.
 | The data | Lost: a node, a disk, a bad upgrade, a bad migration | ZFS replication and HA to the second node; nightly dumps copied off the host; weekly whole-VM backups; a backup before every engine upgrade |
 | The data, password hashes | Read on the backup server | The copy off the host encrypted with age to a key that isn't on the VM (`BACKUP_AGE_RECIPIENT`); checked by the smoke test |
 | The data | Corrupted silently | PostgreSQL data checksums; ZFS checksums |
-| The host | An engine upgraded under the apps without warning | Engines pinned by digest, ignored by Dependabot, upgraded by hand after Diun's alert ([upgrading.md](upgrading.md)) |
+| The host | An engine upgraded under the apps without warning | Engines pinned by digest, ignored by Renovate, upgraded by hand after Diun's alert ([upgrading.md](upgrading.md)) |
 | The host | A compromised image | Every image pinned by digest; weekly vulnerability scan; no container has a capability, privilege or the Docker socket |
 | The Discord channel | Spam through a leaked webhook | The webhook is a secret file; Diun posts only alerts |
 
@@ -85,7 +85,7 @@ Docker socket, no devices, and a health check on every service. A service may br
 `org.honeybeartech.mnemosyne.allow.<rule>` label giving the reason; none does.
 
 `scripts/check_watches.py` checks that every engine (a service labelled `org.honeybeartech.mnemosyne.engine`) is
-watched by Diun at the pinned tag with a pattern that matches it, and ignored by Dependabot.
+watched by Diun at the pinned tag with a pattern that matches it, and disabled in `renovate.json` for every update type.
 
 ## Hardening
 

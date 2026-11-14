@@ -1,6 +1,6 @@
 # What Diun watches (its file provider; compose.yaml mounts this read-only). Only the two engines: their pins are
 # moved by hand, so these alerts are the only way a new release reaches the owner. Everything else in the stack is
-# Dependabot's.
+# Renovate's.
 #
 # Each entry names the engine at the tag compose.yaml pins, and watches the repository's other tags too (watch_repo).
 # Discord gets a message when

@@ -91,5 +91,5 @@ Every `secrets/` and `tls/` folder is 0700 and every file in it 0600, owned by `
 | `scripts/restore.sh DIR pg-roles\|mariadb-users` | Restores the apps' accounts (onto a new server) |
 | `scripts/scheduled-backup.sh` | The nightly run: `backup.sh`, rsync to the backup server (encrypted with age when `BACKUP_AGE_RECIPIENT` is set), pruning, Uptime Kuma push |
 | `scripts/check_compose.py` | The image and hardening policy over `docker compose config --format json` |
-| `scripts/check_watches.py` | Every engine pin is watched by Diun at that tag and ignored by Dependabot |
+| `scripts/check_watches.py` | Every engine pin is watched by Diun at that tag and ignored by Renovate |
 | `scripts/smoke-test.sh` | Starts the stack with throwaway settings and proves the above |

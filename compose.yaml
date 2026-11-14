@@ -5,9 +5,9 @@
 # the Discord webhook come from files under CONFIG_ROOT/<service>/secrets (Docker secrets, at the end), which
 # `scripts/db.sh init` creates.
 #
-# Every image is pinned as name:tag@sha256:<digest>. The two engines are pinned by hand: Dependabot ignores them, Diun
+# Every image is pinned as name:tag@sha256:<digest>. The two engines are pinned by hand: Renovate ignores them, Diun
 # alerts when upstream publishes a new tag or rebuilds the pinned one, and an upgrade is a pull request made by hand
-# (docs/upgrading.md). The exporters and Diun itself are Dependabot's, like every other homelab stack.
+# (docs/upgrading.md). The exporters and Diun itself are Renovate's, like every other homelab stack.
 # scripts/check_compose.py enforces the image and hardening policy, scripts/check_watches.py that every engine pin
 # is watched (docs/security.md#policy).
 # Each service's data lives in its own host folder, CONFIG_ROOT/<service>/config, and nowhere else: no named volumes,
@@ -185,7 +185,7 @@ services:
       - ${CONFIG_ROOT:?set CONFIG_ROOT in .env}/mariadb/config:/var/lib/mysql
       - ./initdb/mariadb:/docker-entrypoint-initdb.d:ro
 
-  # --- Metrics for Argus (Dependabot-managed) ----------------------------------------------------------------------
+  # --- Metrics for Argus (Renovate-managed) ------------------------------------------------------------------------
 
   # Logs in as metrics (pg_monitor: reads statistics, no table data) over this stack's network, where TLS adds
   # nothing. The metrics port answers anyone on the LAN, like Argus' other exporters: it carries no row data.
@@ -233,7 +233,7 @@ services:
     ports:
       - "${MYSQLD_EXPORTER_PORT:?set MYSQLD_EXPORTER_PORT in .env}:9104"
 
-  # --- Browsing (Dependabot-managed) -------------------------------------------------------------------------------
+  # --- Browsing (Renovate-managed) ---------------------------------------------------------------------------------
 
   # DbGate, a web GUI for both engines: databases, tables, columns, keys, indexes and diagrams. It answers on
   # DBGATE_BIND_ADDRESS, 127.0.0.1 unless .env says otherwise: reached through an SSH tunnel to this host, or from a
@@ -286,7 +286,7 @@ services:
     volumes:
       - ${CONFIG_ROOT:?set CONFIG_ROOT in .env}/dbgate/config:/data
 
-  # --- Upgrade watch (Dependabot-managed) --------------------------------------------------------------------------
+  # --- Upgrade watch (Renovate-managed) ----------------------------------------------------------------------------
 
   # Diun reads the engines it watches from diun/images.yml (the file provider only: no Docker socket) and posts to
   # Discord when a new tag appears or the pinned tag is rebuilt. It never changes anything; the upgrade is a pull

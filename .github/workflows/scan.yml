@@ -4,7 +4,7 @@ name: Image scan
 # CRITICAL), at the exact digest in compose.yaml and for the host's platform (linux/amd64). Weekly, when
 # compose.yaml changes on main, and on demand. Findings go to the repository's code scanning alerts, one
 # category per image, and are triaged as described in docs/dependencies.md: most are fixed upstream and arrive
-# with Dependabot's next bump of that image. Nothing is scanned while there is no compose.yaml.
+# with Renovate's next bump of that image. Nothing is scanned while there is no compose.yaml.
 on:
   push:
     branches: [main]

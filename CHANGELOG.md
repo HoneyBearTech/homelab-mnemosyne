@@ -6,6 +6,14 @@ All notable changes to homelab-mnemosyne are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Dependency updates come from Renovate** ([`renovate.json`](renovate.json)) instead of Dependabot, weekly as
+  before. It also covers what Dependabot couldn't read: the images in `.gitlab-ci.yml` and the tool images in the
+  workflows' `docker run` commands. The engines stay untouched (`scripts/check_watches.py` now checks
+  `renovate.json` for that), and update pull requests are merged by hand rather than automatically
+  ([docs/dependencies.md](docs/dependencies.md#tracking-dependencies)).
+
 ## [0.1.0] - 2026-11-10
 
 The first release: the Docker Compose stack for Mnemosyne, a shared PostgreSQL and MariaDB for the homelab's apps.
