@@ -146,7 +146,7 @@ services:
   # backup of the system tables, the first time a new version starts.
   mariadb:
     <<: *hardened
-    image: mariadb:11.8.9-noble@sha256:f16d7a344413e519dff518f27bdb221388f84b0d274c97c4fb5f2cb0dc1b34fa
+    image: mariadb:11.8.9-noble@sha256:d36f18d65a0459510b8b0f643b226a6d299e3206486e2b64ff20754a6d291707
     container_name: mariadb
     user: ${PUID:?set PUID in .env}:${PGID:?set PGID in .env}
     read_only: true
