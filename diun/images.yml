@@ -1,6 +1,7 @@
-# What Diun watches (its file provider; compose.yaml mounts this read-only). Only the two engines: their pins are
-# moved by hand, so these alerts are the only way a new release reaches the owner. Everything else in the stack is
-# Dependabot's.
+# What Diun watches (its file provider; compose.yaml mounts this read-only). Only the two engines: Renovate proposes
+# their new versions too but never merges them, so these alerts are the quickest signal to the owner. Everything else
+# in the stack is Renovate's alone. Renovate also moves the tags in this file (a regex manager in renovate.json), so
+# a version bump changes this file and compose.yaml in one pull request; a rebuild changes only compose.yaml.
 #
 # Each entry names the engine at the tag compose.yaml pins, and watches the repository's other tags too (watch_repo).
 # Discord gets a message when

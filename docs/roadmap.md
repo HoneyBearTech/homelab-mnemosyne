@@ -12,6 +12,8 @@ Reviewed November 2026; it looks a year ahead (to November 2027) and is revised 
 - [x] Argus dashboards and an alert for both engines
 - [x] DbGate, a structure-only web GUI ([browsing.md](browsing.md))
 - [x] The apps that can use an external database moved over, one at a time ([migrating.md](migrating.md))
+- [x] Renovate replaces Dependabot: everything but the engines merges by itself after the checks and a 3-day wait;
+      the engines are proposed and merged by hand ([dependencies.md](dependencies.md))
 
 ## Now
 
@@ -21,6 +23,11 @@ Reviewed November 2026; it looks a year ahead (to November 2027) and is revised 
       which version in [migrating.md](migrating.md)
 
 ## Later
+
+- [ ] Make the engine check in `scripts/check_watches.py` cover all of `renovate.json` (manager-level rules, group
+      settings, ignored paths, disabling patterns), or accept that a change to that file is reviewed by hand
+- [ ] Remove the idle `dependabot-auto-merge.yml` workflow and the two workflow comments that name Dependabot
+      (a workflow change, for the maintainer)
 
 - [ ] Point-in-time recovery for PostgreSQL (WAL archiving with pgBackRest to the backup server), if minutes of loss
       between dumps ever matter

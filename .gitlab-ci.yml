@@ -8,8 +8,7 @@
 # - the checks of ci.yml's "Checks + tests" that need no Docker daemon, on every commit pushed here: lint, unit
 #   tests with the coverage floor, the secret scan, the workflow lint and the Compose policy check. The smoke test
 #   needs a daemon (Docker-in-Docker, so a privileged runner) and an amd64 machine, and runs on GitHub only.
-# Images are pinned by tag and digest. Dependabot doesn't read this file: they're bumped by hand
-# (docs/dependencies.md).
+# Images are pinned by tag and digest, and Renovate proposes their updates (docs/dependencies.md).
 
 workflow:
   rules:
