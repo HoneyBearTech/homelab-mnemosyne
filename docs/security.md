@@ -86,9 +86,11 @@ Docker socket, no devices, and a health check on every service. A service may br
 
 `scripts/check_watches.py` checks that every engine (a service labelled `org.honeybeartech.mnemosyne.engine`) is
 watched by Diun at the pinned tag with a pattern that matches it, never merged by Renovate, and kept in step with
-Diun's tag by a Renovate regex manager. The Renovate check is a strict allow-list: the last rule in `renovate.json`
-must be the engine's `automerge: false` rule with nothing else in it, and a preset, a vulnerability-alert setting or a
-disabling rule that the check can't prove harmless fails CI until it is reviewed and the check is extended on purpose.
+Diun's tag by a Renovate regex manager. The Renovate check guards against mistakes, not deliberate tricks: the last
+rule in `renovate.json` must be the engine's `automerge: false` rule with nothing else in it, and presets,
+vulnerability-alert settings and disabling rules outside a short allow-list fail CI. It doesn't cover every Renovate
+setting (manager-level rules, group settings, ignored paths), so any change to `renovate.json` still needs a careful
+review; Renovate itself never edits that file.
 
 ## Hardening
 
