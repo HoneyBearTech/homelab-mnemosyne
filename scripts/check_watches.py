@@ -11,9 +11,12 @@ An engine is a service with the label ``org.honeybeartech.mnemosyne.engine``. Ru
 - ``include``: one of ``include_tags`` matches the pinned tag (a pattern that doesn't is a typo, and would likely
   miss the next release too).
 - ``stale``: no entry watches an image that compose.yaml doesn't pin as an engine.
-- ``renovate``: renovate.json names the engine in a packageRule with ``automerge: false`` and no other matcher, no
-  later rule could turn automerge back on for it, no ``extends`` preset turns automerge on, and Renovate isn't told
-  to ignore or disable the engine.
+- ``renovate``: renovate.json keeps the engine from merging by itself, by a strict allow-list (anything unknown
+  fails, so a new setting is reviewed on purpose rather than trusted): the last packageRule is the engine's hold
+  (only ``description``, ``matchPackageNames``, ``automerge: false`` and ``prBodyNotes``, with the engine named
+  exactly); no rule disables something that could include the engine; ``extends`` only lists presets known not to
+  turn automerge on; ``vulnerabilityAlerts`` only sets labels; and the engine, its manager and the custom managers
+  are not ignored or disabled.
 - ``diun-manager``: a custom regex manager in renovate.json reads the engine's tag from its diun/images.yml entry,
   so a version bump changes that file and compose.yaml in one pull request.
 
@@ -23,7 +26,6 @@ Exit codes: 0 = consistent, 1 = problems, 2 = unreadable input.
 from __future__ import annotations
 
 import argparse
-import fnmatch
 import json
 import re
 import sys
@@ -33,7 +35,18 @@ from typing import Any
 import yaml
 from check_compose import ImageRef, parse_image
 
-MIN_REGEX_LENGTH = 3  # "/x/": a /regular expression/ name has at least one character between the slashes
+# Everything renovate.json may contain that this check can't prove harmless is a problem: review it, then extend
+# these lists on purpose.
+HOLD_KEYS = {"description", "matchPackageNames", "automerge", "prBodyNotes"}
+KNOWN_PRESETS = {
+    "config:recommended",
+    "docker:pinDigests",
+    "helpers:pinGitHubActionDigests",
+    ":semanticCommitsDisabled",
+}
+ALERT_KEYS = {"description", "labels"}
+PLAIN_NAME = re.compile(r"[A-Za-z0-9._-]+")  # no glob, regular expression, negation or other special character
+PLAIN_PACKAGE = re.compile(r"[A-Za-z0-9._/-]+")  # the same, and a namespace/ (never a leading / or a /regex/)
 ENGINE_LABEL = "org.honeybeartech.mnemosyne.engine"
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -52,63 +65,6 @@ def engines(compose: dict[str, Any]) -> dict[str, str]:
 
 # The packageRule keys that match a package by name (anything else under "match" narrows a rule), and the ones
 # that match by regular expression.
-NAME_KEYS = ("matchPackageNames", "matchDepNames")
-PATTERN_KEYS = ("matchPackagePatterns", "matchDepPatterns")
-
-
-def name_matches(pattern: str, name: str) -> bool:
-    """Renovate's name matching: a /regular expression/ with optional flags, else a case-insensitive glob.
-
-    Fails closed: a regular expression that doesn't compile counts as matching.
-    """
-    regex = re.fullmatch(r"/(.+)/([a-z]*)", pattern)
-    if regex:
-        try:
-            return re.search(regex[1], name, re.IGNORECASE if "i" in regex[2] else 0) is not None
-        except re.error:
-            return True
-    return fnmatch.fnmatchcase(name.lower(), pattern.lower())
-
-
-def rule_names(rule: dict[str, Any], keys: tuple[str, ...] = NAME_KEYS) -> list[str]:
-    """Return the names a packageRule lists under the given keys."""
-    return [str(name) for key in keys for name in rule.get(key) or []]
-
-
-def could_match(rule: dict[str, Any], name: str) -> bool:
-    """Whether a rule might apply to `name`.
-
-    Renovate applies a rule only if every matcher it has matches, so one name matcher that provably excludes the
-    engine is enough. A negation counts as matching, and so does a rule with no name matcher.
-    """
-    for key in (*NAME_KEYS, *PATTERN_KEYS):
-        entries = [str(n) for n in rule.get(key) or []]
-        if not entries:
-            continue
-        if key in PATTERN_KEYS:
-            entries = [f"/{n}/i" for n in entries]
-        if not any(n.startswith("!") or name_matches(n, name) for n in entries):
-            return False
-    return True
-
-
-def is_hold(rule: dict[str, Any], name: str) -> bool:
-    """Whether a rule covers the engine, sets automerge: false, and has no matcher that narrows it.
-
-    Renovate applies a rule only if every matcher matches: each name matcher the rule has must list the engine,
-    and the rule must have no other matcher, negation or pattern.
-    """
-    populated = [key for key in NAME_KEYS if rule.get(key)]
-    narrowed = any(key.startswith("match") and key not in NAME_KEYS and rule[key] for key in rule)
-    covers = bool(populated) and all(
-        any(not str(n).startswith("!") and name_matches(str(n), name) for n in rule[key]) for key in populated
-    )
-    negated = any(str(n).startswith("!") for n in rule_names(rule))
-    return (
-        covers and rule.get("automerge") is False and not narrowed and not negated and rule.get("enabled") is not False
-    )
-
-
 def dependency_name(repository: str) -> str:
     """Renovate's name for an image: Docker Hub's official images without docker.io/library/."""
     return repository.removeprefix("docker.io/library/").removeprefix("docker.io/")
@@ -132,42 +88,84 @@ def watch_problems(service: str, pin: ImageRef, watches: list[dict[str, Any]]) -
     return problems
 
 
+def hold_problems(name: str, rules: list[Any]) -> list[str]:
+    """Return why the last packageRule isn't the engine's never-merge rule."""
+    hold = rules[-1] if rules else None
+    names = hold.get("matchPackageNames") if isinstance(hold, dict) else None
+    if (
+        isinstance(hold, dict)
+        and set(hold) <= HOLD_KEYS
+        and hold.get("automerge") is False
+        and isinstance(names, list)
+        and all(isinstance(n, str) and PLAIN_NAME.fullmatch(n) for n in names)
+        and name in names
+    ):
+        return []
+    keys = ", ".join(sorted(HOLD_KEYS))
+    return [
+        (
+            f'the last packageRule must be the {name} rule: only the keys {keys}, "automerge": false, and '
+            f'"matchPackageNames" a list of plain names (no pattern characters) with "{name}" in it'
+        )
+    ]
+
+
+def disabling_problems(name: str, rules: list[Any]) -> list[str]:
+    """Return the rules that disable something that could include the engine."""
+    problems = []
+    for index, rule in enumerate(rules):
+        if not isinstance(rule, dict) or rule.get("enabled") is not False:
+            continue
+        names = rule.get("matchPackageNames") or rule.get("matchDepNames")
+        datasources = rule.get("matchDatasources")
+        plain = (
+            isinstance(names, list)
+            and all(isinstance(n, str) and PLAIN_PACKAGE.fullmatch(n) for n in names)
+            and name.lower() not in {n.lower() for n in names}
+        )
+        other = isinstance(datasources, list) and bool(datasources) and "docker" not in datasources
+        if not (plain or other):
+            problems.append(
+                f"packageRules[{index}] disables updates and could include {name}: give it plain package names "
+                "without it, or a matchDatasources without docker"
+            )
+    return problems
+
+
+def settings_problems(name: str, renovate: dict[str, Any]) -> list[str]:
+    """Return the top-level settings that could let the engine merge by itself, or stop it being proposed."""
+    problems = [
+        f"extends has {preset}, which this check doesn't know: review it, then add it to KNOWN_PRESETS"
+        for preset in map(str, renovate.get("extends") or [])
+        if preset not in KNOWN_PRESETS
+    ]
+    alerts = renovate.get("vulnerabilityAlerts", {})
+    if not isinstance(alerts, dict) or set(alerts) - ALERT_KEYS:
+        problems.append("vulnerabilityAlerts may only set labels (no automerge, extends or packageRules)")
+    if not isinstance(renovate.get("osvVulnerabilityAlerts", False), bool):
+        problems.append("osvVulnerabilityAlerts must be true or false")
+    if renovate.get("enabled") is False:
+        problems.append("Renovate is disabled (enabled: false)")
+    if name in {str(n) for n in renovate.get("ignoreDeps") or []}:
+        problems.append(f"ignoreDeps has {name}")
+    managers = renovate.get("enabledManagers")
+    if managers is not None and not {"docker-compose", "custom.regex"} <= set(managers):
+        problems.append("enabledManagers must include docker-compose and custom.regex")
+    for key in ("docker-compose", "custom.regex"):
+        block = renovate.get(key)
+        if isinstance(block, dict) and block.get("enabled") is False:
+            problems.append(f'"{key}" is disabled (enabled: false)')
+    if any(isinstance(m, dict) and m.get("enabled") is False for m in renovate.get("customManagers") or []):
+        problems.append("a customManagers entry is disabled (enabled: false)")
+    return problems
+
+
 def renovate_problems(service: str, name: str, renovate: dict[str, Any]) -> list[str]:
     """Return why Renovate might merge the engine `name` by itself, or not propose it."""
-    rules = [r for r in renovate.get("packageRules") or [] if isinstance(r, dict)]
-    holds = [i for i, rule in enumerate(rules) if is_hold(rule, name)]
-    problems = []
-    if not holds:
-        problems.append(
-            f"{service}: [renovate] renovate.json has no packageRule that names {name} and sets automerge: false "
-            "with no other matcher (such as matchUpdateTypes)"
-        )
-    else:
-        problems += [
-            f"{service}: [renovate] packageRules[{i}] comes after the {name} rule and could turn automerge back on"
-            for i in range(holds[-1] + 1, len(rules))
-            if rules[i].get("automerge") is True and could_match(rules[i], name)
-        ]
-    problems += [
-        f"{service}: [renovate] the extends preset {preset} turns automerge on"
-        for preset in map(str, renovate.get("extends") or [])
-        if "automerge" in preset.lower() and "disable" not in preset.lower()
-    ]
-    alerts = renovate.get("vulnerabilityAlerts")
-    if isinstance(alerts, dict) and alerts.get("automerge") is True:
-        problems.append(
-            f"{service}: [renovate] vulnerabilityAlerts sets automerge: true, which overrides the {name} rule"
-        )
-    managers = renovate.get("enabledManagers")
-    ignored = (
-        name in {str(n) for n in renovate.get("ignoreDeps") or []}
-        or renovate.get("enabled") is False
-        or any(r.get("enabled") is False and name in rule_names(r) for r in rules)
-        or (managers is not None and not {"docker-compose", "custom.regex"} <= set(managers))
-    )
-    if ignored:
-        problems.append(f"{service}: [renovate] renovate.json tells Renovate to ignore or disable {name}")
-    return problems
+    rules = renovate.get("packageRules")
+    rules = rules if isinstance(rules, list) else []
+    found = hold_problems(name, rules) + disabling_problems(name, rules) + settings_problems(name, renovate)
+    return [f"{service}: [renovate] {problem}" for problem in found]
 
 
 def diun_manager_problems(service: str, name: str, entry: dict[str, Any], renovate: dict[str, Any]) -> list[str]:
@@ -178,7 +176,8 @@ def diun_manager_problems(service: str, name: str, entry: dict[str, Any], renova
         if not isinstance(manager, dict) or manager.get("customType") != "regex":
             continue
         files = [str(p) for p in manager.get("managerFilePatterns") or []]
-        if not any(name_matches(p, "diun/images.yml") for p in files) or manager.get("datasourceTemplate") != "docker":
+        reads_diun = any(re.search(p[1:-1], "diun/images.yml") for p in files if p.startswith("/") and p.endswith("/"))
+        if not reads_diun or manager.get("datasourceTemplate") != "docker":
             continue
         for pattern in manager.get("matchStrings") or []:
             match = re.search(re.sub(r"\(\?<([A-Za-z]+)>", r"(?P<\1>", str(pattern)), line + "\n", re.MULTILINE)

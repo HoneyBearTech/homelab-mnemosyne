@@ -85,9 +85,10 @@ Docker socket, no devices, and a health check on every service. A service may br
 `org.honeybeartech.mnemosyne.allow.<rule>` label giving the reason; none does.
 
 `scripts/check_watches.py` checks that every engine (a service labelled `org.honeybeartech.mnemosyne.engine`) is
-watched by Diun at the pinned tag with a pattern that matches it, never merged by Renovate (a `renovate.json` rule sets
-`automerge: false` for it, and nothing after that rule can turn it back on), and kept in step with Diun's tag by a
-Renovate regex manager.
+watched by Diun at the pinned tag with a pattern that matches it, never merged by Renovate, and kept in step with
+Diun's tag by a Renovate regex manager. The Renovate check is a strict allow-list: the last rule in `renovate.json`
+must be the engine's `automerge: false` rule with nothing else in it, and a preset, a vulnerability-alert setting or a
+disabling rule that the check can't prove harmless fails CI until it is reviewed and the check is extended on purpose.
 
 ## Hardening
 

@@ -105,88 +105,169 @@ def with_rules(rules: list[dict]) -> dict:
     return renovate_with(packageRules=copy.deepcopy(rules))
 
 
-MARIADB_HOLD = {"matchPackageNames": ["mariadb"], "automerge": False}
-NO_RULE = "mariadb: [renovate] renovate.json has no packageRule that names mariadb and sets automerge: false"
+HOLD = RENOVATE["packageRules"][-1]
+HOLD_PROBLEM = "[renovate] the last packageRule must be the {} rule: only the keys"
 
 
-def test_no_rule_holds_the_engine() -> None:
-    rules = [r for r in RENOVATE["packageRules"] if r.get("automerge") is not False]
-    assert [p for p in problems(renovate=with_rules(rules)) if p.startswith("mariadb")] == [
-        NO_RULE + " with no other matcher (such as matchUpdateTypes)"
-    ]
+def hold_with(**changes: object) -> dict:
+    return with_rules([*RENOVATE["packageRules"][:-1], {**HOLD, **changes}])
+
+
+def test_the_hold_is_not_the_last_rule() -> None:
+    later = {"matchPackageNames": ["crazymax/diun"], "automerge": True}
+    found = problems(renovate=with_rules([*RENOVATE["packageRules"], later]))
+    assert [p.split(" ")[0] for p in found] == ["mariadb:", "postgres:"]
+    assert all(HOLD_PROBLEM.format(p.split(":")[0]) in p for p in found)
+
+
+def test_no_package_rules_at_all() -> None:
+    assert len(problems(renovate={**RENOVATE, "packageRules": []})) == 2
+    assert len(problems(renovate={**RENOVATE, "packageRules": "nope"})) == 2
 
 
 def test_a_hold_that_names_only_one_engine() -> None:
-    rules = [*RENOVATE["packageRules"][:2], {"matchPackageNames": ["postgres"], "automerge": False}]
-    assert len(problems(renovate=with_rules(rules))) == 1
-
-
-def test_a_hold_narrowed_to_some_updates() -> None:
-    hold = {**MARIADB_HOLD, "matchUpdateTypes": ["minor", "patch", "digest"]}
-    assert NO_RULE in problems(renovate=with_rules([{"matchPackageNames": ["postgres"], "automerge": False}, hold]))[0]
-
-
-def test_a_hold_that_is_disabled_or_negated() -> None:
-    for hold in ({**MARIADB_HOLD, "enabled": False}, {"matchPackageNames": ["mariadb", "!foo"], "automerge": False}):
-        assert any(NO_RULE in p for p in problems(renovate=with_rules([hold])))
-
-
-@pytest.mark.parametrize(
-    "later",
-    [
-        {"automerge": True},
-        {"matchManagers": ["docker-compose"], "automerge": True},
-        {"matchPackageNames": ["!crazymax/diun"], "automerge": True},
-        {"matchPackageNames": ["maria*"], "automerge": True},
-        {"matchPackageNames": ["/^maria/"], "automerge": True},
-        {"matchPackagePatterns": ["^mar"], "automerge": True},
-        {"matchPackageNames": ["MARIADB"], "automerge": True},
-        {"matchPackageNames": ["/^MARIADB$/i"], "automerge": True},
-        {"matchPackageNames": ["/^(/"], "automerge": True},
-        {"matchPackageNames": ["mariadb"], "matchDepNames": ["MariaDB"], "automerge": True},
-    ],
-)
-def test_a_later_rule_could_turn_automerge_back_on(later: dict) -> None:
-    found = problems(renovate=with_rules([*RENOVATE["packageRules"], later]))
-    assert found
-    assert all("packageRules[3] comes after the" in p and "turn automerge back on" in p for p in found)
-
-
-@pytest.mark.parametrize(
-    "later",
-    [
-        {"matchPackageNames": ["crazymax/diun"], "automerge": True},
-        {"matchPackageNames": ["/^prom/"], "automerge": True},
-        {"matchPackageNames": ["/^MARIADB$/"], "automerge": True},
-        {"matchPackageNames": ["mariadb"], "matchDepNames": ["crazymax/diun"], "automerge": True},
-        {"matchPackageNames": ["mariadb"], "dependencyDashboardApproval": True},
-        {"automerge": False},
-    ],
-)
-def test_a_later_rule_that_cannot_matter(later: dict) -> None:
-    assert problems(renovate=with_rules([*RENOVATE["packageRules"], later])) == []
-
-
-def test_a_preset_turns_automerge_on() -> None:
-    assert problems(renovate=renovate_with(extends=["config:recommended", ":automergeAll"])) == [
-        "mariadb: [renovate] the extends preset :automergeAll turns automerge on",
-        "postgres: [renovate] the extends preset :automergeAll turns automerge on",
-    ]
-    assert problems(renovate=renovate_with(extends=[":automergeDisabled"])) == []
+    found = problems(renovate=hold_with(matchPackageNames=["postgres"]))
+    assert len(found) == 1
+    assert found[0].startswith("mariadb: ")
 
 
 @pytest.mark.parametrize(
     "change",
     [
-        {"ignoreDeps": ["mariadb"]},
+        {"matchDepNames": ["mariadb"]},
+        {"matchDepNames": []},
+        {"matchUpdateTypes": []},
+        {"matchUpdateTypes": ["minor", "patch"]},
+        {"matchPackageNames": ["postgres", "mariadb"], "matchManagers": ["docker-compose"]},
+        {"matchPackagePatterns": ["maria"]},
+        {"enabled": True},
         {"enabled": False},
-        {"enabledManagers": ["github-actions"]},
-        {"packageRules": [*RENOVATE["packageRules"], {"matchPackageNames": ["mariadb"], "enabled": False}]},
+        {"groupName": "engines"},
+        {"automerge": True},
+        {"automerge": None},
+        {"automerge": "false"},
+        {"matchPackageNames": ["MARIADB", "postgres"]},
+        {"matchPackageNames": ["{postgres,mariadb}"]},
+        {"matchPackageNames": ["@(postgres|mariadb)"]},
+        {"matchPackageNames": ["postgres", "mariadb", "mar*"]},
+        {"matchPackageNames": ["postgres", "mariadb", "!x"]},
+        {"matchPackageNames": ["/^(postgres|mariadb)$/g"]},
+        {"matchPackageNames": ["/^(postgres|mariadb)$/i"]},
+        {"matchPackageNames": ["docker.io/library/postgres", "docker.io/library/mariadb"]},
+        {"matchPackageNames": "mariadb"},
+        {"matchPackageNames": [["mariadb"]]},
+        {"matchPackageNames": []},
     ],
 )
-def test_renovate_is_told_to_ignore_an_engine(change: dict) -> None:
+def test_a_hold_that_isnt_a_strict_hold(change: dict) -> None:
+    found = problems(renovate=hold_with(**change))
+    assert found
+    assert any("[renovate] the last packageRule must be the" in p for p in found)
+
+
+def test_a_hold_that_is_a_plain_list_with_extra_names_passes() -> None:
+    assert problems(renovate=hold_with(matchPackageNames=["postgres", "mariadb", "other-thing_1.x"])) == []
+
+
+def test_a_non_object_as_the_last_rule() -> None:
+    assert len(problems(renovate=with_rules([*RENOVATE["packageRules"][:-1], "mariadb"]))) == 2
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        {"enabled": False},
+        {"enabled": False, "matchUpdateTypes": ["major"]},
+        {"enabled": False, "matchManagers": ["docker-compose"]},
+        {"enabled": False, "matchDatasources": []},
+        {"enabled": False, "matchDatasources": ["docker"]},
+        {"enabled": False, "matchPackageNames": []},
+        {"enabled": False, "matchPackageNames": ["mariadb"]},
+        {"enabled": False, "matchPackageNames": ["MariaDB"]},
+        {"enabled": False, "matchDepNames": ["postgres"]},
+        {"enabled": False, "matchPackageNames": ["maria*"]},
+        {"enabled": False, "matchPackageNames": ["/^maria/"]},
+        {"enabled": False, "matchPackageNames": ["{postgres,x}"]},
+        {"enabled": False, "matchPackageNames": ["!other"]},
+    ],
+)
+def test_a_rule_that_could_disable_an_engine(rule: dict) -> None:
+    found = problems(renovate=with_rules([rule, *RENOVATE["packageRules"]]))
+    assert found
+    assert all("packageRules[0] disables updates and could include" in p for p in found)
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        {"enabled": False, "matchDatasources": ["github-runners"]},
+        {"enabled": False, "matchPackageNames": ["python", "actions/python-versions"], "matchUpdateTypes": ["major"]},
+        {"enabled": False, "matchDepNames": ["dependabot/fetch-metadata"]},
+        {"enabled": True, "matchManagers": ["docker-compose"]},
+        {"automerge": True},
+    ],
+)
+def test_a_rule_that_cannot_disable_an_engine(rule: dict) -> None:
+    assert problems(renovate=with_rules([rule, *RENOVATE["packageRules"]])) == []
+
+
+@pytest.mark.parametrize("preset", [":automergeAll", ":automergeDisabled", "group:allNonMajor", "config:base"])
+def test_an_extends_preset_that_isnt_known(preset: str) -> None:
+    found = problems(renovate=renovate_with(extends=["config:recommended", preset]))
+    assert len(found) == 2
+    assert all(f"[renovate] extends has {preset}, which this check doesn't know" in p for p in found)
+
+
+@pytest.mark.parametrize(
+    "alerts",
+    [
+        {"automerge": True},
+        {"automerge": False},
+        {"extends": [":automergeAll"]},
+        {"packageRules": [{"automerge": True}]},
+        {"labels": ["security"], "schedule": ["at any time"]},
+        True,
+        [],
+    ],
+)
+def test_vulnerability_alerts_that_are_more_than_labels(alerts: object) -> None:
+    found = problems(renovate=renovate_with(vulnerabilityAlerts=alerts))
+    assert len(found) == 2
+    assert all("[renovate] vulnerabilityAlerts may only set labels" in p for p in found)
+
+
+def test_vulnerability_alerts_with_labels_only() -> None:
+    assert problems(renovate=renovate_with(vulnerabilityAlerts={"labels": ["security"]})) == []
+    assert problems(renovate=renovate_with(vulnerabilityAlerts={})) == []
+
+
+def test_osv_vulnerability_alerts_must_be_a_boolean() -> None:
+    assert problems(renovate=renovate_with(osvVulnerabilityAlerts=True)) == []
+    found = problems(renovate=renovate_with(osvVulnerabilityAlerts={"automerge": True}))
+    assert len(found) == 2
+    assert all("osvVulnerabilityAlerts must be true or false" in p for p in found)
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"enabled": False}, "Renovate is disabled"),
+        ({"ignoreDeps": ["mariadb"]}, "ignoreDeps has mariadb"),
+        ({"enabledManagers": ["github-actions", "custom.regex"]}, "enabledManagers must include"),
+        ({"enabledManagers": ["docker-compose"]}, "enabledManagers must include"),
+        ({"docker-compose": {"enabled": False}}, '"docker-compose" is disabled'),
+        ({"custom.regex": {"enabled": False}}, '"custom.regex" is disabled'),
+        ({"customManagers": [{**DIUN_MANAGER, "enabled": False}]}, "a customManagers entry is disabled"),
+    ],
+)
+def test_renovate_is_told_to_ignore_an_engine(change: dict, message: str) -> None:
     found = problems(renovate=renovate_with(**change))
-    assert any("[renovate] renovate.json tells Renovate to ignore or disable" in p for p in found)
+    assert any(f"[renovate] {message}" in p for p in found)
+
+
+def test_harmless_settings_are_allowed() -> None:
+    harmless = {"docker-compose": {"enabled": True}, "ignoreDeps": ["other"], "customManagers": [DIUN_MANAGER]}
+    assert problems(renovate=renovate_with(**harmless)) == []
 
 
 @pytest.mark.parametrize(
@@ -250,24 +331,3 @@ def test_main_renovate_json_that_is_not_json(tmp_path: Path, capsys: pytest.Capt
     (tmp_path / "renovate.json").write_text("{ // a comment\n}", encoding="utf-8")
     assert cw.main(["--root", str(tmp_path)]) == 2
     assert "error:" in capsys.readouterr().err
-
-
-def test_a_hold_with_two_name_matchers_must_cover_the_engine_with_each() -> None:
-    hold = {"matchPackageNames": ["postgres", "mariadb"], "matchDepNames": ["mariadb"], "automerge": False}
-    found = problems(renovate=with_rules([hold]))
-    assert len(found) == 1
-    assert found[0].startswith("postgres: [renovate] renovate.json has no packageRule that names postgres")
-    both = {**hold, "matchDepNames": ["postgres", "MariaDB"]}
-    assert problems(renovate=with_rules([both])) == []
-
-
-def test_a_hold_with_a_case_insensitive_regex_or_glob() -> None:
-    assert problems(renovate=with_rules([{"matchPackageNames": ["/^(postgres|mariadb)$/i"], "automerge": False}])) == []
-    assert problems(renovate=with_rules([{"matchPackageNames": ["Maria*", "POSTGRES"], "automerge": False}])) == []
-
-
-def test_vulnerability_alerts_that_automerge() -> None:
-    found = problems(renovate=renovate_with(vulnerabilityAlerts={"automerge": True}))
-    assert [p.split(":")[0] for p in found] == ["mariadb", "postgres"]
-    assert all("[renovate] vulnerabilityAlerts sets automerge: true" in p for p in found)
-    assert problems(renovate=renovate_with(vulnerabilityAlerts={"labels": ["security"]})) == []

@@ -35,10 +35,10 @@ all hashes come with the pull request.
   versions) wait for the maintainer to merge them at a quiet time, since a new engine version restarts every app's
   database. Only a new major version of an engine is held back until you tick it on the Dependency Dashboard; a new
   MariaDB series within the same major (11.9, say) arrives as an ordinary engine pull request, never auto-merged, for
-  you to merge or close ([upgrading.md](upgrading.md)). `scripts/check_watches.py` fails CI if `renovate.json` could
-  let an engine merge by itself. Renovate moves the engines' tags in `diun/images.yml` in the same pull request as
-  `compose.yaml`; Diun's entries carry no digest, so a rebuild changes only `compose.yaml`. Diun's Discord alerts
-  stay.
+  you to merge or close ([upgrading.md](upgrading.md)). `scripts/check_watches.py` fails CI unless `renovate.json`
+  keeps the engines' never-merge rule last and uses only settings the check knows to be harmless. Renovate moves
+  the engines' tags in `diun/images.yml` in the same pull request as `compose.yaml`; Diun's entries carry no digest,
+  so a rebuild changes only `compose.yaml`. Diun's Discord alerts stay.
 - **A new version waits three days after its release** (`minimumReleaseAge`, where the registry reports a release
   date; a version whose registry reports none is proposed without the wait), so a release that is pulled or fixed
   within days doesn't reach the server. Fixes for vulnerability alerts skip the wait. An image rebuild skips it too:
