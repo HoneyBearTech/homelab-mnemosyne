@@ -1,6 +1,165 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": [
+    "Renovate proposes every dependency update (it replaced Dependabot's version updates). docs/dependencies.md describes what it reads and when. This file is plain JSON, with no comments, because scripts/check_watches.py reads it with Python's json module; each rule says why in its `description`."
+  ],
+  "enabled": true,
   "extends": [
-    "config:recommended"
+    "config:recommended",
+    "docker:pinDigests",
+    "helpers:pinGitHubActionDigests",
+    ":semanticCommitsDisabled"
+  ],
+  "enabledManagers": [
+    "docker-compose",
+    "pip-compile",
+    "github-actions",
+    "gitlabci",
+    "custom.regex"
+  ],
+  "timezone": "Etc/UTC",
+  "schedule": [
+    "* 6-9 * * 1"
+  ],
+  "assignees": [
+    "HoneyBearTech"
+  ],
+  "platformCommit": "enabled",
+  "commitBody": "Signed-off-by: {{{gitAuthor}}}",
+  "automerge": true,
+  "automergeType": "pr",
+  "automergeStrategy": "squash",
+  "platformAutomerge": true,
+  "minimumReleaseAge": "3 days",
+  "minimumReleaseAgeBehaviour": "timestamp-optional",
+  "pip-compile": {
+    "managerFilePatterns": [
+      "/^requirements-dev\\.txt$/"
+    ],
+    "lockFileMaintenance": {
+      "enabled": false
+    }
+  },
+  "customManagers": [
+    {
+      "description": [
+        "Images that no other manager reads: the ones `docker run` starts in workflow steps (actionlint, gitleaks in ci.yml; Trivy in scan.yml)."
+      ],
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/[^/]+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "(?<depName>[a-z0-9][a-z0-9./-]*[a-z0-9]):(?<currentValue>[A-Za-z0-9][A-Za-z0-9._-]*)@(?<currentDigest>sha256:[0-9a-f]{64})"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "description": [
+        "The engines' tags in diun/images.yml (`- name: docker.io/library/<engine>:<tag>`). Same depName, datasource and currentValue as compose.yaml's pin, so one version bump is one branch and changes both files (scripts/check_watches.py fails CI if they disagree). Diun's entries carry no digest, so a rebuild changes only compose.yaml."
+      ],
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^diun/images\\.yml$/"
+      ],
+      "matchStrings": [
+        "(?:^|\\n)- name: docker\\.io/library/(?<depName>postgres|mariadb):(?<currentValue>[A-Za-z0-9][A-Za-z0-9._-]*)[ \\t]*(?:\\n|$)"
+      ],
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": [
+        "An image rebuild (a new digest under the same tag) doesn't wait: Docker Hub dates it by the tag's last push, so a tag rebuilt about weekly would restart the clock each time and never get through the Monday-only schedule."
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchUpdateTypes": [
+        "digest"
+      ],
+      "minimumReleaseAge": null
+    },
+    {
+      "description": [
+        "init, analyze and upload-sarif must share one version (was Dependabot's `codeql` group)."
+      ],
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "github/codeql-action",
+        "github/codeql-action/**"
+      ],
+      "groupName": "codeql"
+    },
+    {
+      "description": [
+        "The smoke test's `runs-on: ubuntu-24.04` (ci.yml) matches the server's Ubuntu release: it moves with the server, by hand."
+      ],
+      "matchDatasources": [
+        "github-runners"
+      ],
+      "enabled": false
+    },
+    {
+      "description": [
+        "The repo's Python is 3.14 (pyproject.toml's target-version, the setup-python steps, the GitLab job image): a new patch release is fine, a new minor moves by hand together with those."
+      ],
+      "matchPackageNames": [
+        "python",
+        "actions/python-versions"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor"
+      ],
+      "enabled": false
+    },
+    {
+      "description": [
+        "Only the idle workflows/dependabot-auto-merge.yml uses this action; its pin stays as it is until the workflow is deleted."
+      ],
+      "matchPackageNames": [
+        "dependabot/fetch-metadata"
+      ],
+      "enabled": false
+    },
+    {
+      "description": [
+        "diun/images.yml keeps its tags unpinned (Diun compares the tag, not a digest), so Renovate must not add a digest there; it only moves the tag together with compose.yaml."
+      ],
+      "matchFileNames": [
+        "diun/images.yml"
+      ],
+      "pinDigests": false
+    },
+    {
+      "description": [
+        "A new major version (or MariaDB series) of an engine needs a planned upgrade (docs/upgrading.md): Renovate opens a pull request only once the owner ticks it on the Dependency Dashboard."
+      ],
+      "matchPackageNames": [
+        "postgres",
+        "mariadb"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": [
+        "The database engines (owner 2026-11-20): Renovate proposes their versions and rebuilds, and never merges them. The owner merges at a quiet time (docs/upgrading.md): a new engine version, even a patch, restarts every app's database. Keep this the LAST rule that mentions them; scripts/check_watches.py fails CI if an engine could auto-merge."
+      ],
+      "matchPackageNames": [
+        "postgres",
+        "mariadb"
+      ],
+      "automerge": false,
+      "prBodyNotes": [
+        "**Database engine: Renovate never merges this.** Merge it by hand at a quiet time, after the steps in docs/upgrading.md."
+      ]
+    }
   ]
 }

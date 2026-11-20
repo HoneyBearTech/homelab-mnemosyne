@@ -16,28 +16,41 @@ COMPOSE = {
 }
 WATCHES = [
     {"name": "docker.io/library/postgres:18.6-trixie", "watch_repo": True, "include_tags": [r"^18\.[0-9]+-trixie$"]},
-    {"name": "mariadb:11.8.9-noble", "watch_repo": True, "include_tags": [r"^11\.8\.[0-9]+-noble$"]},
+    {"name": "docker.io/library/mariadb:11.8.9-noble", "watch_repo": True, "include_tags": [r"^11\.8\.[0-9]+-noble$"]},
 ]
-DEPENDABOT = {
-    "updates": [
-        {"package-ecosystem": "pip"},
+DIUN_MANAGER = {
+    "customType": "regex",
+    "managerFilePatterns": ["/^diun/images\\.yml$/"],
+    "matchStrings": [
+        (
+            r"(?:^|\n)- name: docker\.io/library/(?<depName>postgres|mariadb):(?<currentValue>[A-Za-z0-9._-]+)"
+            r"[ \t]*(?:\n|$)"
+        )
+    ],
+    "datasourceTemplate": "docker",
+}
+RENOVATE = {
+    "extends": ["config:recommended"],
+    "enabledManagers": ["docker-compose", "custom.regex"],
+    "automerge": True,
+    "customManagers": [DIUN_MANAGER],
+    "packageRules": [
         {
-            "package-ecosystem": "docker-compose",
-            "ignore": [
-                {"dependency-name": "postgres"},
-                {"dependency-name": "mariadb"},
-                {"dependency-name": "crazymax/diun", "update-types": ["version-update:semver-major"]},
-            ],
+            "matchPackageNames": ["postgres", "mariadb"],
+            "matchUpdateTypes": ["major"],
+            "dependencyDashboardApproval": True,
         },
-    ]
+        {"matchPackageNames": ["crazymax/diun"], "automerge": True},
+        {"matchPackageNames": ["postgres", "mariadb"], "automerge": False, "prBodyNotes": ["by hand"]},
+    ],
 }
 
 
-def problems(compose: dict | None = None, watches: list | None = None, dependabot: dict | None = None) -> list[str]:
+def problems(compose: dict | None = None, watches: list | None = None, renovate: dict | None = None) -> list[str]:
     return cw.check(
         compose if compose is not None else COMPOSE,
         watches if watches is not None else WATCHES,
-        dependabot if dependabot is not None else DEPENDABOT,
+        renovate if renovate is not None else RENOVATE,
     )
 
 
@@ -61,7 +74,7 @@ def test_watched_twice() -> None:
 
 def test_watch_at_another_tag() -> None:
     watches = copy.deepcopy(WATCHES)
-    watches[0]["name"] = "postgres:18.5-trixie"
+    watches[0]["name"] = "docker.io/library/postgres:18.5-trixie"
     assert problems(watches=watches) == [
         "postgres: [pinned-tag] diun/images.yml watches 18.5-trixie, compose.yaml pins 18.6-trixie"
     ]
@@ -82,15 +95,109 @@ def test_patterns_miss_the_pin() -> None:
     ]
 
 
-def test_dependabot_would_propose_an_engine() -> None:
-    dependabot = copy.deepcopy(DEPENDABOT)
-    dependabot["updates"][1]["ignore"][1] = {
-        "dependency-name": "mariadb",
-        "update-types": ["version-update:semver-major"],
-    }
-    assert problems(dependabot=dependabot) == [
-        "mariadb: [dependabot] .github/dependabot.yml doesn't ignore mariadb for every update type"
+def renovate_with(**changes: object) -> dict:
+    renovate = copy.deepcopy(RENOVATE)
+    renovate.update(changes)
+    return renovate
+
+
+def with_rules(rules: list[dict]) -> dict:
+    return renovate_with(packageRules=copy.deepcopy(rules))
+
+
+MARIADB_HOLD = {"matchPackageNames": ["mariadb"], "automerge": False}
+NO_RULE = "mariadb: [renovate] renovate.json has no packageRule that names mariadb and sets automerge: false"
+
+
+def test_no_rule_holds_the_engine() -> None:
+    rules = [r for r in RENOVATE["packageRules"] if r.get("automerge") is not False]
+    assert [p for p in problems(renovate=with_rules(rules)) if p.startswith("mariadb")] == [
+        NO_RULE + " with no other matcher (such as matchUpdateTypes)"
     ]
+
+
+def test_a_hold_that_names_only_one_engine() -> None:
+    rules = [*RENOVATE["packageRules"][:2], {"matchPackageNames": ["postgres"], "automerge": False}]
+    assert len(problems(renovate=with_rules(rules))) == 1
+
+
+def test_a_hold_narrowed_to_some_updates() -> None:
+    hold = {**MARIADB_HOLD, "matchUpdateTypes": ["minor", "patch", "digest"]}
+    assert NO_RULE in problems(renovate=with_rules([{"matchPackageNames": ["postgres"], "automerge": False}, hold]))[0]
+
+
+def test_a_hold_that_is_disabled_or_negated() -> None:
+    for hold in ({**MARIADB_HOLD, "enabled": False}, {"matchPackageNames": ["mariadb", "!foo"], "automerge": False}):
+        assert any(NO_RULE in p for p in problems(renovate=with_rules([hold])))
+
+
+@pytest.mark.parametrize(
+    "later",
+    [
+        {"automerge": True},
+        {"matchManagers": ["docker-compose"], "automerge": True},
+        {"matchPackageNames": ["!crazymax/diun"], "automerge": True},
+        {"matchPackageNames": ["maria*"], "automerge": True},
+        {"matchPackageNames": ["/^maria/"], "automerge": True},
+        {"matchPackagePatterns": ["^mar"], "automerge": True},
+    ],
+)
+def test_a_later_rule_could_turn_automerge_back_on(later: dict) -> None:
+    found = problems(renovate=with_rules([*RENOVATE["packageRules"], later]))
+    assert found
+    assert all("packageRules[3] comes after the" in p and "turn automerge back on" in p for p in found)
+
+
+@pytest.mark.parametrize(
+    "later",
+    [
+        {"matchPackageNames": ["crazymax/diun"], "automerge": True},
+        {"matchPackageNames": ["/^prom/"], "automerge": True},
+        {"matchPackageNames": ["mariadb"], "dependencyDashboardApproval": True},
+        {"automerge": False},
+    ],
+)
+def test_a_later_rule_that_cannot_matter(later: dict) -> None:
+    assert problems(renovate=with_rules([*RENOVATE["packageRules"], later])) == []
+
+
+def test_a_preset_turns_automerge_on() -> None:
+    assert problems(renovate=renovate_with(extends=["config:recommended", ":automergeAll"])) == [
+        "mariadb: [renovate] the extends preset :automergeAll turns automerge on",
+        "postgres: [renovate] the extends preset :automergeAll turns automerge on",
+    ]
+    assert problems(renovate=renovate_with(extends=[":automergeDisabled"])) == []
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"ignoreDeps": ["mariadb"]},
+        {"enabled": False},
+        {"enabledManagers": ["github-actions"]},
+        {"packageRules": [*RENOVATE["packageRules"], {"matchPackageNames": ["mariadb"], "enabled": False}]},
+    ],
+)
+def test_renovate_is_told_to_ignore_an_engine(change: dict) -> None:
+    found = problems(renovate=renovate_with(**change))
+    assert any("[renovate] renovate.json tells Renovate to ignore or disable" in p for p in found)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"customManagers": []},
+        {"customManagers": [{**DIUN_MANAGER, "customType": "jsonata"}]},
+        {"customManagers": [{**DIUN_MANAGER, "managerFilePatterns": ["/^other\\.yml$/"]}]},
+        {"customManagers": [{**DIUN_MANAGER, "datasourceTemplate": "pypi"}]},
+        {"customManagers": [{**DIUN_MANAGER, "matchStrings": [r"- name: (?<depName>nothing):(?<currentValue>\S+)"]}]},
+        {"customManagers": [{**DIUN_MANAGER, "matchStrings": [r"- name: .*(?<depName>mariadb):(?<currentValue>\d+)"]}]},
+    ],
+)
+def test_no_manager_reads_the_diun_tags(change: dict) -> None:
+    found = problems(renovate=renovate_with(**change))
+    assert len(found) == 2
+    assert all("[diun-manager]" in p for p in found)
 
 
 def test_stale_watch() -> None:
@@ -111,10 +218,9 @@ def test_the_repository_itself_is_consistent(capsys: pytest.CaptureFixture[str])
 
 def test_main_reports_problems(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     (tmp_path / "diun").mkdir()
-    (tmp_path / ".github").mkdir()
     (tmp_path / "compose.yaml").write_text((ROOT / "compose.yaml").read_text(encoding="utf-8"), encoding="utf-8")
     (tmp_path / "diun" / "images.yml").write_text("[]\n", encoding="utf-8")
-    (tmp_path / ".github" / "dependabot.yml").write_text("updates: []\n", encoding="utf-8")
+    (tmp_path / "renovate.json").write_text("{}\n", encoding="utf-8")
     assert cw.main(["--root", str(tmp_path)]) == 1
     assert "2 engine(s) checked, 4 problem(s)" in capsys.readouterr().out
 
@@ -125,7 +231,16 @@ def test_main_unreadable(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> 
 
 
 def test_main_wrong_shape(tmp_path: Path) -> None:
-    for path, text in {"compose.yaml": "[]", "diun/images.yml": "[]", ".github/dependabot.yml": "{}"}.items():
+    for path, text in {"compose.yaml": "[]", "diun/images.yml": "[]", "renovate.json": "{}"}.items():
         (tmp_path / path).parent.mkdir(exist_ok=True)
         (tmp_path / path).write_text(text, encoding="utf-8")
     assert cw.main(["--root", str(tmp_path)]) == 2
+
+
+def test_main_renovate_json_that_is_not_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    for path in ("compose.yaml", "diun/images.yml"):
+        (tmp_path / path).parent.mkdir(exist_ok=True)
+        (tmp_path / path).write_text("[]" if path.endswith("yml") else "{}", encoding="utf-8")
+    (tmp_path / "renovate.json").write_text("{ // a comment\n}", encoding="utf-8")
+    assert cw.main(["--root", str(tmp_path)]) == 2
+    assert "error:" in capsys.readouterr().err

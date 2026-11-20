@@ -26,7 +26,7 @@ lint: $(VENV)/.installed
 check: $(VENV)/.installed watches
 	docker compose config --format json | $(VENV)/bin/python scripts/check_compose.py
 
-# Every engine pinned in compose.yaml is watched by Diun at that tag, and ignored by Dependabot (no Docker needed)
+# Every engine pinned in compose.yaml is watched by Diun at that tag, and never merged by Renovate (no Docker needed)
 watches: $(VENV)/.installed
 	$(VENV)/bin/python scripts/check_watches.py
 
