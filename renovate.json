@@ -32,6 +32,9 @@
   "platformAutomerge": true,
   "minimumReleaseAge": "3 days",
   "minimumReleaseAgeBehaviour": "timestamp-optional",
+  "vulnerabilityAlerts": {
+    "labels": ["security", "openssf"]
+  },
   "pip-compile": {
     "managerFilePatterns": [
       "/^requirements-dev\\.txt$/"
