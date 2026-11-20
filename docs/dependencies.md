@@ -33,10 +33,12 @@ all hashes come with the pull request.
   update stays open for the maintainer. Image rebuilds (a new digest under the same tag) merge the same way.
 - **The engines never merge by themselves.** PostgreSQL's and MariaDB's pull requests (rebuilds, patches, minor
   versions) wait for the maintainer to merge them at a quiet time, since a new engine version restarts every app's
-  database; a new major version is only proposed once it is ticked on the Dependency Dashboard
-  ([upgrading.md](upgrading.md)). `scripts/check_watches.py` fails CI if `renovate.json` could let an engine merge by
-  itself. Renovate moves the engines' tags in `diun/images.yml` in the same pull request as `compose.yaml`; Diun's
-  entries carry no digest, so a rebuild changes only `compose.yaml`. Diun's Discord alerts stay.
+  database. Only a new major version of an engine is held back until you tick it on the Dependency Dashboard; a new
+  MariaDB series within the same major (11.9, say) arrives as an ordinary engine pull request, never auto-merged, for
+  you to merge or close ([upgrading.md](upgrading.md)). `scripts/check_watches.py` fails CI if `renovate.json` could
+  let an engine merge by itself. Renovate moves the engines' tags in `diun/images.yml` in the same pull request as
+  `compose.yaml`; Diun's entries carry no digest, so a rebuild changes only `compose.yaml`. Diun's Discord alerts
+  stay.
 - **A new version waits three days after its release** (`minimumReleaseAge`, where the registry reports a release
   date; a version whose registry reports none is proposed without the wait), so a release that is pulled or fixed
   within days doesn't reach the server. Fixes for vulnerability alerts skip the wait. An image rebuild skips it too:
@@ -71,11 +73,10 @@ all hashes come with the pull request.
 
 The weekly scan (`.github/workflows/scan.yml`) scans every pinned image and posts the findings to code scanning.
 For the exporters, Diun and DbGate, fixes arrive through Renovate. For the engines, a finding in the base image is
-usually fixed by an upstream rebuild of the same tag, which Renovate proposes and Diun reports as "has
-been updated": take it as a
-[rebuild](upgrading.md#a-rebuild-a-patch-or-a-minor-release). A finding in the engine itself is fixed by its next
-minor release. A finding in a component the engines never use from the network (a helper binary in the image, say)
-is recorded with the reason it doesn't apply.
+usually fixed by an upstream rebuild of the same tag, which Renovate proposes and Diun reports as "has been updated":
+take it as a [rebuild](upgrading.md#a-rebuild-a-patch-or-a-minor-release). A finding in the engine itself is fixed by
+its next minor release. A finding in a component the engines never use from the network (a helper binary in the
+image, say) is recorded with the reason it doesn't apply.
 
 ### Current findings
 

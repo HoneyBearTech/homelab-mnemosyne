@@ -137,7 +137,7 @@
     },
     {
       "description": [
-        "A new major version (or MariaDB series) of an engine needs a planned upgrade (docs/upgrading.md): Renovate opens a pull request only once the owner ticks it on the Dependency Dashboard."
+        "A new MAJOR version of an engine needs a planned upgrade (docs/upgrading.md): Renovate opens its pull request only once the owner ticks it on the Dependency Dashboard. A new MariaDB series within the same major (11.9, say) is an ordinary engine pull request, never auto-merged, for the owner to merge or close."
       ],
       "matchPackageNames": [
         "postgres",

@@ -14,11 +14,12 @@ All notable changes to homelab-mnemosyne are documented here. The format follows
   date (rebuilds and vulnerability fixes don't), and its commits are signed and signed off. It also proposes the pins
   Dependabot never saw: the images that workflow steps run and the GitLab pipeline's images.
 - **The engines are proposed, never merged by Renovate.** PostgreSQL and MariaDB pull requests wait for you to merge
-  them at a quiet time; a new major is only opened once ticked on the Dependency Dashboard. Renovate moves the
-  engine tags in `diun/images.yml` in the same pull request, and `scripts/check_watches.py` now fails CI if an
-  engine could merge by itself, instead of checking Dependabot's ignore list ([docs/upgrading.md](docs/upgrading.md)).
-  Python's minor version, the runner label and the idle auto-merge workflow's own action stay hand-picked.
-  Dependabot alerts stay on.
+  them at a quiet time; a new major version is only opened once ticked on the Dependency Dashboard, while a new
+  MariaDB series within the same major (11.9, say) is an ordinary engine pull request for you to merge or close.
+  Renovate moves the engine tags in `diun/images.yml` in the same pull request, and `scripts/check_watches.py` now
+  fails CI if an engine could merge by itself, instead of checking Dependabot's ignore list
+  ([docs/upgrading.md](docs/upgrading.md)). Python's minor version, the runner label and the idle auto-merge
+  workflow's own action stay hand-picked. Dependabot alerts stay on.
 - `requirements-dev.txt` is re-locked with pip-compile's standard header and no repeated hashes, with the same
   versions, so Renovate can read it.
 

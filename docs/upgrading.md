@@ -95,8 +95,9 @@ are lost unless dumped first.
 
 The stack follows MariaDB's long-term support lines (11.8 now; five years of community support). Diun reports every
 newer series, but only an LTS is worth moving to: the series in between are supported for about a quarter each.
-Renovate opens a pull request for a new series of 12 or later only after you tick it on the Dependency Dashboard; a
-series that Renovate sees as a minor update of 11 is opened without asking, so close it unless it is an LTS.
+Renovate holds back only a new *major* (MariaDB 12) until you tick it on the Dependency Dashboard. A new series
+within the same major (11.9, say) arrives as an ordinary engine pull request, never auto-merged: merge it or close
+it, and close it unless it is an LTS.
 
 Moving to the next LTS is an in-place upgrade: MariaDB opens the older data and `MARIADB_AUTO_UPGRADE` runs
 `mariadb-upgrade` (after saving the system tables in the data directory). Do it as

@@ -140,6 +140,10 @@ def test_a_hold_that_is_disabled_or_negated() -> None:
         {"matchPackageNames": ["maria*"], "automerge": True},
         {"matchPackageNames": ["/^maria/"], "automerge": True},
         {"matchPackagePatterns": ["^mar"], "automerge": True},
+        {"matchPackageNames": ["MARIADB"], "automerge": True},
+        {"matchPackageNames": ["/^MARIADB$/i"], "automerge": True},
+        {"matchPackageNames": ["/^(/"], "automerge": True},
+        {"matchPackageNames": ["mariadb"], "matchDepNames": ["MariaDB"], "automerge": True},
     ],
 )
 def test_a_later_rule_could_turn_automerge_back_on(later: dict) -> None:
@@ -153,6 +157,8 @@ def test_a_later_rule_could_turn_automerge_back_on(later: dict) -> None:
     [
         {"matchPackageNames": ["crazymax/diun"], "automerge": True},
         {"matchPackageNames": ["/^prom/"], "automerge": True},
+        {"matchPackageNames": ["/^MARIADB$/"], "automerge": True},
+        {"matchPackageNames": ["mariadb"], "matchDepNames": ["crazymax/diun"], "automerge": True},
         {"matchPackageNames": ["mariadb"], "dependencyDashboardApproval": True},
         {"automerge": False},
     ],
@@ -244,3 +250,24 @@ def test_main_renovate_json_that_is_not_json(tmp_path: Path, capsys: pytest.Capt
     (tmp_path / "renovate.json").write_text("{ // a comment\n}", encoding="utf-8")
     assert cw.main(["--root", str(tmp_path)]) == 2
     assert "error:" in capsys.readouterr().err
+
+
+def test_a_hold_with_two_name_matchers_must_cover_the_engine_with_each() -> None:
+    hold = {"matchPackageNames": ["postgres", "mariadb"], "matchDepNames": ["mariadb"], "automerge": False}
+    found = problems(renovate=with_rules([hold]))
+    assert len(found) == 1
+    assert found[0].startswith("postgres: [renovate] renovate.json has no packageRule that names postgres")
+    both = {**hold, "matchDepNames": ["postgres", "MariaDB"]}
+    assert problems(renovate=with_rules([both])) == []
+
+
+def test_a_hold_with_a_case_insensitive_regex_or_glob() -> None:
+    assert problems(renovate=with_rules([{"matchPackageNames": ["/^(postgres|mariadb)$/i"], "automerge": False}])) == []
+    assert problems(renovate=with_rules([{"matchPackageNames": ["Maria*", "POSTGRES"], "automerge": False}])) == []
+
+
+def test_vulnerability_alerts_that_automerge() -> None:
+    found = problems(renovate=renovate_with(vulnerabilityAlerts={"automerge": True}))
+    assert [p.split(":")[0] for p in found] == ["mariadb", "postgres"]
+    assert all("[renovate] vulnerabilityAlerts sets automerge: true" in p for p in found)
+    assert problems(renovate=renovate_with(vulnerabilityAlerts={"labels": ["security"]})) == []

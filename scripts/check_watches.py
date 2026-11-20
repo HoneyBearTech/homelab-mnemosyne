@@ -57,10 +57,17 @@ PATTERN_KEYS = ("matchPackagePatterns", "matchDepPatterns")
 
 
 def name_matches(pattern: str, name: str) -> bool:
-    """Renovate's name matching: exactly, as a glob, or as a /regular expression/."""
-    if len(pattern) >= MIN_REGEX_LENGTH and pattern.startswith("/") and pattern.endswith("/"):
-        return re.search(pattern[1:-1], name) is not None
-    return fnmatch.fnmatchcase(name, pattern)
+    """Renovate's name matching: a /regular expression/ with optional flags, else a case-insensitive glob.
+
+    Fails closed: a regular expression that doesn't compile counts as matching.
+    """
+    regex = re.fullmatch(r"/(.+)/([a-z]*)", pattern)
+    if regex:
+        try:
+            return re.search(regex[1], name, re.IGNORECASE if "i" in regex[2] else 0) is not None
+        except re.error:
+            return True
+    return fnmatch.fnmatchcase(name.lower(), pattern.lower())
 
 
 def rule_names(rule: dict[str, Any], keys: tuple[str, ...] = NAME_KEYS) -> list[str]:
@@ -69,24 +76,36 @@ def rule_names(rule: dict[str, Any], keys: tuple[str, ...] = NAME_KEYS) -> list[
 
 
 def could_match(rule: dict[str, Any], name: str) -> bool:
-    """Whether a rule might apply to `name`: it has no name matcher, a negation, or a name that matches."""
-    names = rule_names(rule)
-    patterns = rule_names(rule, PATTERN_KEYS)
-    if not names and not patterns:
-        return True
-    return any(n.startswith("!") or name_matches(n, name) for n in names) or any(re.search(p, name) for p in patterns)
+    """Whether a rule might apply to `name`.
+
+    Renovate applies a rule only if every matcher it has matches, so one name matcher that provably excludes the
+    engine is enough. A negation counts as matching, and so does a rule with no name matcher.
+    """
+    for key in (*NAME_KEYS, *PATTERN_KEYS):
+        entries = [str(n) for n in rule.get(key) or []]
+        if not entries:
+            continue
+        if key in PATTERN_KEYS:
+            entries = [f"/{n}/i" for n in entries]
+        if not any(n.startswith("!") or name_matches(n, name) for n in entries):
+            return False
+    return True
 
 
 def is_hold(rule: dict[str, Any], name: str) -> bool:
-    """Whether a rule names the engine, sets automerge: false, and has no matcher that narrows it."""
-    narrowed = any(key.startswith("match") and key not in NAME_KEYS for key in rule) or any(
-        n.startswith("!") for n in rule_names(rule)
+    """Whether a rule covers the engine, sets automerge: false, and has no matcher that narrows it.
+
+    Renovate applies a rule only if every matcher matches: each name matcher the rule has must list the engine,
+    and the rule must have no other matcher, negation or pattern.
+    """
+    populated = [key for key in NAME_KEYS if rule.get(key)]
+    narrowed = any(key.startswith("match") and key not in NAME_KEYS and rule[key] for key in rule)
+    covers = bool(populated) and all(
+        any(not str(n).startswith("!") and name_matches(str(n), name) for n in rule[key]) for key in populated
     )
+    negated = any(str(n).startswith("!") for n in rule_names(rule))
     return (
-        name in rule_names(rule)
-        and rule.get("automerge") is False
-        and not narrowed
-        and rule.get("enabled") is not False
+        covers and rule.get("automerge") is False and not narrowed and not negated and rule.get("enabled") is not False
     )
 
 
@@ -134,6 +153,11 @@ def renovate_problems(service: str, name: str, renovate: dict[str, Any]) -> list
         for preset in map(str, renovate.get("extends") or [])
         if "automerge" in preset.lower() and "disable" not in preset.lower()
     ]
+    alerts = renovate.get("vulnerabilityAlerts")
+    if isinstance(alerts, dict) and alerts.get("automerge") is True:
+        problems.append(
+            f"{service}: [renovate] vulnerabilityAlerts sets automerge: true, which overrides the {name} rule"
+        )
     managers = renovate.get("enabledManagers")
     ignored = (
         name in {str(n) for n in renovate.get("ignoreDeps") or []}

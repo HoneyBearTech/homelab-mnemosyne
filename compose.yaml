@@ -234,7 +234,7 @@ services:
     ports:
       - "${MYSQLD_EXPORTER_PORT:?set MYSQLD_EXPORTER_PORT in .env}:9104"
 
-  # --- Browsing (Renovate-managed) ----------------------------------------------------------------------------------
+  # --- Browsing (Renovate-managed) ---------------------------------------------------------------------------------
 
   # DbGate, a web GUI for both engines: databases, tables, columns, keys, indexes and diagrams. It answers on
   # DBGATE_BIND_ADDRESS, 127.0.0.1 unless .env says otherwise: reached through an SSH tunnel to this host, or from a
@@ -287,7 +287,7 @@ services:
     volumes:
       - ${CONFIG_ROOT:?set CONFIG_ROOT in .env}/dbgate/config:/data
 
-  # --- Upgrade watch (Renovate-managed) -----------------------------------------------------------------------------
+  # --- Upgrade watch (Renovate-managed) ----------------------------------------------------------------------------
 
   # Diun reads the engines it watches from diun/images.yml (the file provider only: no Docker socket) and posts to
   # Discord when a new tag appears or the pinned tag is rebuilt. It never changes anything; the upgrade is a pull
