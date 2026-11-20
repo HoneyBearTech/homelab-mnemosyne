@@ -32,9 +32,10 @@ reasoning, and may change course. Because the code is MIT-licensed, you can alwa
 | Contributor | Anyone who opens an issue or pull request | Follow [CONTRIBUTING.md](CONTRIBUTING.md) (coding standards, tests, sign-off, no secrets or network details) and the [Code of Conduct](CODE_OF_CONDUCT.md); report vulnerabilities privately. |
 | Security reporter | Anyone who reports a vulnerability | Report privately and allow time for a fix before disclosing, as described in [SECURITY.md](SECURITY.md). |
 
-Automated tools also take part: Dependabot proposes updates to the stack's images, the Python check tools and the
-GitHub Actions (patch, minor and major updates merge automatically once every required check passes; the
-maintainer merges by hand only an update Dependabot can't classify; a merge deploys to the maintainer's server), and
+Automated tools also take part: Renovate proposes updates to the stack's images, the Python check tools and the
+GitHub Actions (patch, minor and major updates and image rebuilds merge automatically once every required check
+passes, except the database engines', which the maintainer merges by hand at a quiet time; a merge deploys to the
+maintainer's server), and
 CI with the Compose policy check, CodeQL, dependency review and OpenSSF Scorecard check every change.
 
 ## Access to sensitive resources
@@ -52,7 +53,7 @@ Who can change the code, releases and project settings, as of the date of this f
 | The OpenSSF Best Practices badge entry | the maintainer | GitHub sign-in |
 | Pulling public images from Docker Hub in CI without the anonymous rate limit | the workflow steps that log in (CI, image scan) | a Docker Hub access token limited to reading public repositories |
 | Security advisories and private vulnerability reports | the maintainer | GitHub |
-| Automated changes | Dependabot (pull requests only); the auto-merge workflow turns on auto-merge for its patch, minor and major updates and image rebuilds, which GitHub merges only after every required check passes | GitHub, short-lived `GITHUB_TOKEN` |
+| Automated changes | Renovate (`renovate[bot]`, pull requests only); it turns on auto-merge for its updates except the database engines', which GitHub merges only after every required check passes | The Renovate GitHub App's own installation |
 
 There are no other collaborators. Workflows use the per-job `GITHUB_TOKEN`, read-only unless a job asks for
 more, and repository secrets are only available to the workflows that name them, never to pull requests
@@ -80,14 +81,14 @@ handled:
 
 - **What exists**: the maintainer's GitHub account and its recovery codes; the SSH key that signs commits
   and tags; and a Docker Hub access token with the "public repositories, read-only" scope, stored as the
-  repository secret `DOCKERHUB_TOKEN` (with `DOCKERHUB_USERNAME`) for Actions and for Dependabot, so that CI's
+  repository secret `DOCKERHUB_TOKEN` (with `DOCKERHUB_USERNAME`) for Actions only, so that CI's
   image pulls count against an account instead of the runners' shared anonymous limit. It can't push, delete
   or read anything private. Until the maintainer adds it, CI pulls anonymously. The maintainer's own server
   reads the public repository over HTTPS, without a key. Release files are signed keylessly (Sigstore), so
   there is no long-lived signing key.
 - **Storage**: in the maintainer's password manager, never in the repository, CI logs, issues or pull
   requests. Only the steps that log in to Docker Hub reference the token; the smoke test logs out again
-  before any container starts (the images under test include Dependabot's updates), and fork pull requests get no secrets and pull anonymously. GitHub secret
+  before any container starts (the images under test include Renovate's updates), and fork pull requests get no secrets and pull anonymously. GitHub secret
   scanning with push protection and a gitleaks scan in CI block committed secrets, and `.gitignore` excludes
   `.env`, keys and certificates.
 - **Access**: the maintainer only; the successor reaches the GitHub account and the signing key through

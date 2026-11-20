@@ -13,7 +13,7 @@ secure design principles it follows, and how common weaknesses are countered.
 | Passwords | Sniffed on the network | SCRAM-SHA-256 (PostgreSQL); TLS 1.2 or later offered by both engines |
 | Passwords | Leaked through a process list, a log, the repository or a backup | SQL with passwords goes to the engine's client on stdin, never as arguments; secrets are files `0600` in `0700` folders passed as Docker secrets; no secret in `compose.yaml`, `.env` or an example file; gitleaks over the history in CI, push protection; dumps written `0700`/`0600` and encrypted with age before they leave the host |
 | Every app's data | Read through the web GUI | DbGate answers on `127.0.0.1` (or one address a `DOCKER-USER` rule limits to the reverse proxy), holds no password, and logs in as `dbviewer`, which has `CONNECT` and no right to read a row; the smoke test proves it sees structure and no data on both engines |
-| Every app's data | An engine upgraded under the apps without warning | Engines pinned by digest, ignored by Dependabot, upgraded by hand after Diun's alert; `scripts/check_watches.py` fails CI if an engine isn't watched |
+| Every app's data | An engine upgraded under the apps without warning | Engines pinned by digest, never merged by Renovate, upgraded by hand after Diun's alert; `scripts/check_watches.py` fails CI if an engine isn't watched or could auto-merge |
 | The host | A compromised or malicious image | Digest pins; versions change only by reviewed pull request; no privileged, capability, host-namespace, device or Docker-socket access, enforced by `scripts/check_compose.py` in CI and before every release; weekly vulnerability scan of every image |
 | The data | Lost: a node, a disk, a bad upgrade or migration | ZFS replication and HA to a second node; nightly dumps copied off the host; weekly whole-VM backups; a backup before every engine upgrade; restores exercised by the CI smoke test |
 | The data | A crafted or wrong backup overwriting live data | `restore.sh` verifies `SHA256SUMS` first, refuses to overwrite a database without `--replace`, and never restores the stack's own accounts |
@@ -66,7 +66,7 @@ node, or write access to `.env` or the engines' data.
 | CWE-89 (SQL injection) | `scripts/db.sh` building SQL from a name | Names validated against a strict pattern before use |
 | CWE-22 (path traversal) | Restoring a backup | `restore.sh` verifies the checksummed manifest and validates archive names |
 | CWE-532 (sensitive information in logs) | Scripts and containers logging passwords | Passwords never in arguments; the one known upstream case (an app logging its own connection string) is documented in [migrating.md](migrating.md) |
-| CWE-1104 (unmaintained third-party components) | Images, tools, Actions | Dependabot weekly (the engines by hand, with Diun's alerts); weekly image scan ([dependencies.md](dependencies.md)) |
+| CWE-1104 (unmaintained third-party components) | Images, tools, Actions | Renovate weekly (the engines merged by hand, with Diun's alerts); weekly image scan ([dependencies.md](dependencies.md)) |
 | CWE-77/78 (injection) | Workflows, scripts | Untrusted values only via `env:`; actionlint and shellcheck; CodeQL for Actions |
 
 ## Evidence

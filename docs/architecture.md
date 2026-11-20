@@ -43,7 +43,7 @@ that a `DOCKER-USER` rule admits alone (`DBGATE_BIND_ADDRESS`).
 | Diun | Compares the pinned engine tags with the registries and reports changes | Registries, then the Discord webhook |
 | The scheduled backup | Dumps every database, then copies the dumps off the host | `scripts/scheduled-backup.sh` from a systemd timer; rsync over SSH to the backup server |
 | The pull agent | Fast-forwards the checkout to `main` and runs `docker compose up -d` | The host's own agent; nothing connects in to deploy |
-| Dependabot | Proposes updates to the exporters, Diun, DbGate, the tools and the Actions (never the engines) | Pull requests that CI checks, then auto-merged |
+| Renovate | Proposes updates to every image, the tools and the Actions; merges all but the engines' | Pull requests that CI checks, then auto-merged (the engines' by hand) |
 | The maintainer | Reviews and merges changes, makes engine upgrades and releases | Pull requests on `main`; signed tags |
 
 ## Data flow

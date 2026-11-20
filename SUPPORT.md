@@ -30,8 +30,8 @@ is a best-effort policy, not a contract.
 - Before 1.0, a minor release (0.2.0) may add, remove or rename services and settings; such changes are
   listed in the changelog under "Upgrading".
 - The services themselves are supported by their own projects. A release pins the versions that were current
-  and tested when it was made. The exporters' and Diun's security fixes land on `main` as soon as Dependabot's
-  pull request passes every check; the engines' come by hand once Diun reports them
+  and tested when it was made. The exporters' and Diun's security fixes land on `main` as soon as Renovate's
+  pull request passes every check; the engines' come by hand once Renovate proposes them and Diun reports them
   ([docs/upgrading.md](docs/upgrading.md)), then in the next release.
 - If a supported line will end differently, it will be announced in the release notes and in this table
   first.
